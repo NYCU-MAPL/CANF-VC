@@ -1,0 +1,24 @@
+---
+model_architecture: ANFHyperPriorCoder
+
+model_params:
+    num_filters: 128
+    num_features: 128
+    num_hyperpriors: 128
+    hyper_filters: 128
+    gdn_mode: standard
+    in_channels: 2
+    out_channels: 2
+    kernel_size: 3
+    num_layers: 2
+    init_code: gaussian
+    use_DQ: True
+    share_wei: False
+    use_code: False
+    dec_add: False
+    use_attn: False
+    use_QE: False
+    use_mean: True
+    use_context: False
+    condition: Gaussian
+    quant_mode: RUN
