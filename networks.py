@@ -569,17 +569,14 @@ class CondAugmentedNormalizedFlowHyperPriorCoderPredPrior(CondAugmentedNormalize
 
         condition = self.PA(torch.cat([hp_feat, pred_feat], dim=1))
 
-        y_tilde, y_likelihood = self.conditional_bottleneck(
-            code, condition=condition)
+        y_tilde, y_likelihood = self.conditional_bottleneck(code, condition=condition)
 
         # y_tilde = code # No quantize on z2
 
         # Encode distortion
-        # Concat code with condition (MC frame feature)
         x_2, _, jac = self['synthesis' + str(self.num_layers - 1)](input, y_tilde, jac, last_layer=True, layer=self.num_layers - 1)
 
-        # input, code, hyper_code = x_2, y_tilde, z_tilde # x_2 directly backward
-        input, code, hyper_code = output, y_tilde, z_tilde  # Correct setting ; MC frame as x_2 when decoding
+        input, code, hyper_code = output, y_tilde, z_tilde  # MC frame as x_2 when decoding
 
         # Decode
         input, code, jac = self.decode(input, code, jac, rec_code=rec_code, cond_coupling_input=cond_coupling_input)
@@ -588,6 +585,5 @@ class CondAugmentedNormalizedFlowHyperPriorCoderPredPrior(CondAugmentedNormalize
             BDQ = input
             input = self.QE(input)
 
-        # return input, (y_likelihood, z_likelihood), Y_error, jac, code, BDQ
         return input, (y_likelihood, z_likelihood), x_2, jac, code, BDQ
 

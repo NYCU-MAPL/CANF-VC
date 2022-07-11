@@ -15,43 +15,6 @@ from util.vision import imgloader, rgb_transform
 from PIL import Image
 
 
-class VideoData(torchData):
-    """Video Dataset
-
-    Args:
-        root
-        mode
-        frames
-        transform
-    """
-
-    def __init__(self, root, frames, transform=rgb_transform):
-        super().__init__()
-        self.folder = glob(root + 'img/*/*/')
-        self.frames = frames
-        self.transform = transform
-
-    def __len__(self):
-        return len(self.folder)
-        #return 1
-
-    @property
-    def info(self):
-        gop = self[0]
-        return "\nGop size: {}".format(gop.shape)
-
-    def __getitem__(self, index):
-        path = self.folder[index]
-        seed = random.randint(0, 1e9)
-        imgs = []
-        for f in range(self.frames):
-            random.seed(seed)
-            file = path + str(f) + '.png'
-            imgs.append(self.transform(imgloader(file)))
-
-        return stack(imgs)
-
-
 class VideoTestDataIframe(torchData):
     def __init__(self, root, lmda, first_gop=False, sequence=('U', 'B'), GOP=12):
         super(VideoTestDataIframe, self).__init__()
@@ -73,7 +36,7 @@ class VideoTestDataIframe(torchData):
             else:
                 seq_len.extend([96]*7)
             gop_size.extend([GOP]*7)
-            dataset_name_list.extend(['UVG']*7)
+            dataset_name_list.extend(['U']*7)
         if 'B' in sequence:
             self.seq_name.extend(['Kimono1', 'BQTerrace', 'Cactus', 'BasketballDrive', 'ParkScene'])
             if GOP in [12, 16]:
@@ -82,7 +45,7 @@ class VideoTestDataIframe(torchData):
             else:
                 seq_len.extend([96]*5)
             gop_size.extend([GOP]*5)
-            dataset_name_list.extend(['HEVC-B']*5)
+            dataset_name_list.extend(['B']*5)
         if 'C' in sequence:
             self.seq_name.extend(['BasketballDrill', 'BQMall', 'PartyScene', 'RaceHorses'])
             if GOP in [12, 16]:
@@ -90,7 +53,7 @@ class VideoTestDataIframe(torchData):
             else:
                 seq_len.extend([96]*4)
             gop_size.extend([GOP]*4)
-            dataset_name_list.extend(['HEVC-C', 'HEVC-C', 'HEVC-C', 'HEVC-C', ])
+            dataset_name_list.extend(['C']*4)
         if 'D' in sequence:
             self.seq_name.extend(['BasketballPass', 'BQSquare', 'BlowingBubbles', 'RaceHorses1']) # Rename "RaceHorses" to avoid repetition
             if GOP in [12, 16]:
@@ -98,7 +61,7 @@ class VideoTestDataIframe(torchData):
             else:
                 seq_len.extend([96]*4)
             gop_size.extend([GOP]*4)
-            dataset_name_list.extend(['HEVC-D', 'HEVC-D', 'HEVC-D', 'HEVC-D', ])
+            dataset_name_list.extend(['D']*4)
         if 'E' in sequence:
             self.seq_name.extend(['vidyo1', 'vidyo3', 'vidyo4'])
             if GOP in [12, 16]:
@@ -106,7 +69,7 @@ class VideoTestDataIframe(torchData):
             else:
                 seq_len.extend([96]*3)
             gop_size.extend([GOP]*3)
-            dataset_name_list.extend(['HEVC-E', 'HEVC-E', 'HEVC-E'])
+            dataset_name_list.extend(['E']*3)
 
         if 'M' in sequence:
             MCL_list = []
@@ -121,7 +84,7 @@ class VideoTestDataIframe(torchData):
             else:
                 seq_len.extend([96]*30)
             gop_size.extend([GOP]*30)
-            dataset_name_list.extend(['MCL_JCV']*30)
+            dataset_name_list.extend(['M']*30)
 
         seq_len = dict(zip(self.seq_name, seq_len))
         gop_size = dict(zip(self.seq_name, gop_size))
@@ -151,10 +114,13 @@ class VideoTestDataIframe(torchData):
         for frame_idx in range(frame_start, frame_end):
             random.seed(seed)
 
-            raw_path = os.path.join(self.root, dataset_name, 'rgb', seq_name, 'frame_{:d}.png'.format(frame_idx))
+            raw_path = os.path.join(self.root, dataset_name, seq_name, 'frame_{:d}.png'.format(frame_idx))
 
             if frame_idx == frame_start:
-                img_path = os.path.join(self.root, 'bpg', str(self.qp), 'decoded', seq_name, f'frame_{frame_idx}.png')
+                img_root = os.path.join(self.root, 'bpg', str(self.qp), 'decoded', seq_name)
+                os.mkdirs(img_root, exist_ok=True)
+
+                img_path = os.path.join(img_root, f'frame_{frame_idx}.png')
 
                 if not os.path.exists(img_path):
                     # Compress data on-the-fly when they are not previously compressed.
