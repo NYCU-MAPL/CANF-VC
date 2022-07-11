@@ -127,3 +127,7 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# model weight & dataset path
+models/**
+video_dataset/**

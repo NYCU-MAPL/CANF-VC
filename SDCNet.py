@@ -38,7 +38,6 @@ def deconv2d(channels_in, channels_out, kernel_size=4, stride=2, padding=1, bias
 
 
 class SDCNet(nn.Module):
-    """SDC-Net: Video prediction using spatially-displaced convolution"""
 
     def __init__(self, sequence_length, use_sdc=False, kernel_size=11):
         super(SDCNet, self).__init__()
@@ -215,10 +214,10 @@ class SDCNet(nn.Module):
             return None, output_flow
 
 
-class SDCNet_3M(SDCNet):
+class MotionExtrapolationNet(SDCNet):
 
     def __init__(self, sequence_length, use_sdc=False, kernel_size=11):
-        super(SDCNet_3M, self).__init__(sequence_length, use_sdc, kernel_size)
+        super(MotionExtrapolationNet, self).__init__(sequence_length, use_sdc, kernel_size)
         self.sequence_length = sequence_length
 
         factor = 2
