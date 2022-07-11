@@ -157,7 +157,7 @@ class VideoTestDataIframe(torchData):
                 img_path = os.path.join(self.root, 'bpg', str(self.qp), 'decoded', seq_name, f'frame_{frame_idx}.png')
 
                 if not os.path.exists(img_path):
-                    # Run BPG on-the-fly when images are not previously compressed.
+                    # Compress data on-the-fly when they are not previously compressed.
                     bin_path = img_path.replace('decoded', 'bin').replace('png', 'bin')
 
                     os.makedirs(os.path.dirname(bin_path), exist_ok=True)
