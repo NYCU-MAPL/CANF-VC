@@ -1,4 +1,8 @@
-# CANF-VC
+# CANF-VC: Conditional Augmented Normalizing Flows for Video Compression
+
+## Project Installation
+* Prepare PyTorch 1.4.0 environment and correspond torchvision
+* Run `sh install.sh`
 
 ## Model Weight
 * CANF-VC: https://drive.google.com/drive/folders/1fj8sb_CMktyJ_yU0Yf2lbZjzxVYAGvUw?usp=sharing
