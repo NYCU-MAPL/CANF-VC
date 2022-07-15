@@ -81,6 +81,43 @@ class HyperPriorCoder(FactorizedCoder):
         self.divisor = 64
         self.num_bitstreams = 2
 
+    def compress(self, input, return_hat=False):
+        features = self.analysis(input)
+
+        hyperpriors = self.hyper_analysis(
+            features.abs() if self.use_abs else features)
+
+        side_stream, z_hat = self.entropy_bottleneck.compress(
+            hyperpriors, return_sym=True)
+
+        condition = self.hyper_synthesis(z_hat)
+
+        ret = self.conditional_bottleneck.compress(
+            features, condition=condition, return_sym=return_hat)
+
+        if return_hat:
+            stream, y_hat = ret
+            x_hat = self.synthesis(y_hat)
+            return x_hat, [stream, side_stream], [hyperpriors.size()]
+        else:
+            stream = ret
+            return [stream, side_stream], [hyperpriors.size()]
+
+    def decompress(self, strings, shape):
+        stream, side_stream = strings
+        z_shape = shape
+
+        z_hat = self.entropy_bottleneck.decompress(side_stream, z_shape)
+
+        condition = self.hyper_synthesis(z_hat)
+
+        y_hat = self.conditional_bottleneck.decompress(
+            stream, condition.size(), condition=condition)
+
+        reconstructed = self.synthesis(y_hat)
+
+        return reconstructed
+
 
 class GoogleHyperAnalysisTransform(nn.Sequential):
     def __init__(self, num_features, num_filters, num_hyperpriors):
@@ -435,7 +472,7 @@ class CondAugmentedNormalizedFlowHyperPriorCoder(HyperPriorCoder):
 
         return input, code, jac
 
-    def entropy_model(self, input, code, jac=False):
+    def entropy_model(self, input, code):
         # Enrtopy coding
         hyper_code = self.hyper_analysis(
             code.abs() if self.use_abs else code)
@@ -444,20 +481,52 @@ class CondAugmentedNormalizedFlowHyperPriorCoder(HyperPriorCoder):
         # z_tilde = hyper_code
 
         condition = self.hyper_synthesis(z_tilde)
-
-        y_tilde, y_likelihood = self.conditional_bottleneck(
-            code, condition=condition)
-        # y_tilde = code
-
-        # Encode distortion
-        Y_error, _, jac = self['synthesis'+str(self.num_layers-1)](
-            input, y_tilde, jac, last_layer=True, layer=self.num_layers-1)
-
-        return Y_error, y_tilde, z_tilde, y_likelihood, z_likelihood
+        y_tilde, y_likelihood = self.conditional_bottleneck(code, condition=condition)
+        # y_tilde = code # No quantize on z2
+        
+        return y_tilde, z_tilde, y_likelihood, z_likelihood
 
     # TODO
-    def compress(self, input, cond_coupling_input=None, return_hat=False, reverse_input=None):
-        pass
+    def compress(self, input, cond_coupling_input=None, reverse_input=None, return_hat=False):
+        if self.cond_coupling:
+            assert not (cond_coupling_input is None), "cond_coupling_input should be specified"
+        
+        code = None
+        jac = None
+        input, features, jac = self.encode(
+            input, code, jac, visual=visual, figname=figname, cond_coupling_input=cond_coupling_input)
+
+        hyperpriors = self.hyper_analysis(
+            features.abs() if self.use_abs else features)
+
+        side_stream, z_hat = self.entropy_bottleneck.compress(
+            hyperpriors, return_sym=True)
+
+        condition = self.hyper_synthesis(z_hat)
+
+        ret = self.conditional_bottleneck.compress(
+            features, condition=condition, return_sym=return_hat)
+
+        if return_hat:
+            jac = None
+            stream, y_hat = ret
+
+            # Decode
+            if not self.output_nought:
+                assert not (reverse_input is None), "reverse_input should be specified"
+                input = reverse_input
+            else:
+                input = torch.zeros_like(input)
+                
+            x_hat, code, jac = self.decode(
+                input, y_hat, jac, cond_coupling_input=cond_coupling_input)
+            if self.DQ is not None:
+                x_hat = self.QE(x_hat)
+
+            return x_hat, [stream, side_stream], [hyperpriors.size()]
+        else:
+            stream = ret
+            return [stream, side_stream], [hyperpriors.size()]
 
     # TODO
     def decompress(self, strings, shape): #TODO
@@ -477,18 +546,10 @@ class CondAugmentedNormalizedFlowHyperPriorCoder(HyperPriorCoder):
         jac = [] if jac else None
         input, code, jac = self.encode(input, code, jac, cond_coupling_input=cond_coupling_input)
 
-        # Enrtopy coding
-        hyper_code = self.hyper_analysis(
-            code.abs() if self.use_abs else code)
+        # Entropy model
+        y_tilde, z_tilde, y_likelihood, z_likelihood = entropy_model(input, code)
 
-        z_tilde, z_likelihood = self.entropy_bottleneck(hyper_code)
-        # z_tilde = hyper_code
-
-        condition = self.hyper_synthesis(z_tilde)
-        y_tilde, y_likelihood = self.conditional_bottleneck(code, condition=condition)
-        # y_tilde = code # No quantize on z2
-
-        # Encode distortion
+        # Encode distortion (last synthesis transform)
         x_2, _, jac = self['synthesis'+str(self.num_layers-1)](input, y_tilde, jac, last_layer=True, layer=self.num_layers-1)
 
         #input, code, hyper_code = x_2, y_tilde, z_tilde # x_2 directly backward
@@ -501,7 +562,6 @@ class CondAugmentedNormalizedFlowHyperPriorCoder(HyperPriorCoder):
             BDQ = input
             input = self.QE(input)
 
-        #return input, (y_likelihood, z_likelihood), Y_error, jac, code, BDQ
         return input, (y_likelihood, z_likelihood), x_2, jac, code, BDQ
 
 
@@ -538,6 +598,72 @@ class CondAugmentedNormalizedFlowHyperPriorCoderPredPrior(CondAugmentedNormalize
                 nn.LeakyReLU(inplace=True),
                 nn.Conv2d(640, kwargs['num_features'], 1)
             )
+    
+    def entropy_model(self, input, code, pred_prior_input):
+        # Enrtopy coding
+        hyper_code = self.hyper_analysis(
+            code.abs() if self.use_abs else code)
+
+        z_tilde, z_likelihood = self.entropy_bottleneck(hyper_code)
+        # z_tilde = hyper_code
+
+        hp_feat = self.hyper_synthesis(z_tilde)
+        pred_feat = self.pred_prior(pred_prior_input)
+
+        condition = self.PA(torch.cat([hp_feat, pred_feat], dim=1))
+
+        y_tilde, y_likelihood = self.conditional_bottleneck(code, condition=condition)
+
+        # y_tilde = code # No quantize on z2
+
+        return y_tilde, z_tilde, y_likelihood, z_likelihood
+
+    def compress(self, input, cond_coupling_input=None, reverse_input=None, pred_prior_input=None, return_hat=False):
+        if self.cond_coupling:
+            assert not (cond_coupling_input is None), "cond_coupling_input should be specified"
+        if pred_prior_input is None:
+            pred_prior_input = cond_coupling_input
+        
+        code = None
+        jac = None
+        input, features, jac = self.encode(
+            input, code, jac, visual=visual, figname=figname, cond_coupling_input=cond_coupling_input)
+
+        hyperpriors = self.hyper_analysis(
+            features.abs() if self.use_abs else features)
+
+        side_stream, z_hat = self.entropy_bottleneck.compress(
+            hyperpriors, return_sym=True)
+
+        hp_feat = self.hyper_synthesis(z_hat)
+        pred_feat = self.pred_prior(pred_prior_input)
+
+        condition = self.PA(torch.cat([hp_feat, pred_feat], dim=1))
+
+        ret = self.conditional_bottleneck.compress(
+            features, condition=condition, return_sym=return_hat)
+
+        if return_hat:
+            jac = None
+            stream, y_hat = ret
+
+            # Decode
+            if not self.output_nought:
+                assert not (reverse_input is None), "reverse_input should be specified"
+                input = reverse_input
+            else:
+                input = torch.zeros_like(input)
+                
+            x_hat, code, jac = self.decode(
+                input, y_hat, jac, cond_coupling_input=cond_coupling_input)
+            if self.DQ is not None:
+                x_hat = self.QE(x_hat)
+
+            return x_hat, [stream, side_stream], [hyperpriors.size()]
+        else:
+            stream = ret
+            return [stream, side_stream], [hyperpriors.size()]
+
 
     def forward(self, input, code=None, jac=None 
                 output=None, # Should assign value when self.output_nought==False
@@ -558,21 +684,8 @@ class CondAugmentedNormalizedFlowHyperPriorCoderPredPrior(CondAugmentedNormalize
             input, code, jac, visual=visual, cond_coupling_input=cond_coupling_input)
 
         # Enrtopy coding
-        hyper_code = self.hyper_analysis(
-            code.abs() if self.use_abs else code)
-
-        z_tilde, z_likelihood = self.entropy_bottleneck(hyper_code)
-        # z_tilde = hyper_code
-
-        hp_feat = self.hyper_synthesis(z_tilde)
-        pred_feat = self.pred_prior(pred_prior_input)
-
-        condition = self.PA(torch.cat([hp_feat, pred_feat], dim=1))
-
-        y_tilde, y_likelihood = self.conditional_bottleneck(code, condition=condition)
-
-        # y_tilde = code # No quantize on z2
-
+        y_tilde, z_tilde, y_likelihood, z_likelihood = entropy_model(input, code, pred_prior_input)
+        
         # Encode distortion
         x_2, _, jac = self['synthesis' + str(self.num_layers - 1)](input, y_tilde, jac, last_layer=True, layer=self.num_layers - 1)
 
