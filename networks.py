@@ -486,7 +486,6 @@ class CondAugmentedNormalizedFlowHyperPriorCoder(HyperPriorCoder):
         
         return y_tilde, z_tilde, y_likelihood, z_likelihood
 
-    # TODO
     def compress(self, input, cond_coupling_input=None, reverse_input=None, return_hat=False):
         if self.cond_coupling:
             assert not (cond_coupling_input is None), "cond_coupling_input should be specified"
@@ -520,7 +519,7 @@ class CondAugmentedNormalizedFlowHyperPriorCoder(HyperPriorCoder):
                 
             x_hat, code, jac = self.decode(
                 input, y_hat, jac, cond_coupling_input=cond_coupling_input)
-            if self.DQ is not None:
+            if self.use_QE:
                 x_hat = self.QE(x_hat)
 
             return x_hat, [stream, side_stream], [hyperpriors.size()]
@@ -528,9 +527,36 @@ class CondAugmentedNormalizedFlowHyperPriorCoder(HyperPriorCoder):
             stream = ret
             return [stream, side_stream], [hyperpriors.size()]
 
-    # TODO
-    def decompress(self, strings, shape): #TODO
-        pass
+    def decompress(self, strings, shapes, cond_coupling_input=None, reverse_input=None):
+        if self.cond_coupling:
+            assert not (cond_coupling_input is None), "cond_coupling_input should be specified"
+        
+        jac = None
+
+        stream, side_stream = strings
+        y_shape, z_shape = shapes
+
+        z_hat = self.entropy_bottleneck.decompress(side_stream, z_shape)
+
+        condition = self.hyper_synthesis(z_hat)
+
+        y_hat = self.conditional_bottleneck.decompress(
+            stream, y_shape, condition=condition)
+        
+        # Decode
+        if not self.output_nought:
+            assert not (reverse_input is None), "reverse_input should be specified"
+            input = reverse_input
+        else:
+            input = torch.zeros_like(input)
+
+        x_hat, code, jac = self.decode(
+            input, y_hat, jac, cond_coupling_input=cond_coupling_input)
+
+        if self.use_QE:
+            reconstructed = self.QE(x_hat)
+
+        return reconstructed
 
     def forward(self, input, code=None, jac=None 
                 output=None, # Should assign value when self.output_nought==False
@@ -664,6 +690,41 @@ class CondAugmentedNormalizedFlowHyperPriorCoderPredPrior(CondAugmentedNormalize
             stream = ret
             return [stream, side_stream], [hyperpriors.size()]
 
+    def decompress(self, strings, shapes, cond_coupling_input=None, reverse_input=None, pred_prior_input=None):
+        if self.cond_coupling:
+            assert not (cond_coupling_input is None), "cond_coupling_input should be specified"
+        if pred_prior_input is None:
+            pred_prior_input = cond_coupling_input
+        
+        jac = None
+
+        stream, side_stream = strings
+        y_shape, z_shape = shapes
+
+        z_hat = self.entropy_bottleneck.decompress(side_stream, z_shape)
+
+        hp_feat = self.hyper_synthesis(z_hat)
+        pred_feat = self.pred_prior(pred_prior_input)
+
+        condition = self.PA(torch.cat([hp_feat, pred_feat], dim=1))
+
+        y_hat = self.conditional_bottleneck.decompress(
+            stream, y_shape, condition=condition)
+        
+        # Decode
+        if not self.output_nought:
+            assert not (reverse_input is None), "reverse_input should be specified"
+            input = reverse_input
+        else:
+            input = torch.zeros_like(input)
+
+        x_hat, code, jac = self.decode(
+            input, y_hat, jac, cond_coupling_input=cond_coupling_input)
+
+        if self.use_QE:
+            reconstructed = self.QE(x_hat)
+
+        return reconstructed
 
     def forward(self, input, code=None, jac=None 
                 output=None, # Should assign value when self.output_nought==False
