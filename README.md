@@ -17,7 +17,7 @@
 * Prepare all of your video sequence (in `.png` format), or
 * [Download all datasets](https://drive.google.com/file/d/1eAZezoiARHXN-GpoDn2LlmnhtphSGzVu/view?usp=sharing):
   * Including:
-    * `U` for UVG
+    * `U` for UVG dataset
     * `B`, `C`, `D`, `E` for HEVC-B, -C, -D, -E dataset
     * `M` for MCL-JCV dataset
   * We provide `python yuv2png.py` for you to turn `.yuv` video into `.png` video frames
