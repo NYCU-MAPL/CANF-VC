@@ -24,7 +24,7 @@
 
 ## Execution
 * PSNR models:
-  * CANF-VC: `$ python test.py --Iframe=ANFIC --MENet=PWC --motion_coder_conf=./config/DVC_motion.yml --cond_motion_coder_conf=./config/CANF_motion_predprior.yml --residual_coder_conf=./config/CANF_inter_coder.yml --dataset={U/B/C/D/E/M} --dataset_path=/path/to/video_dataset --lmda=2048 --model_dir=/path/to/CANF-VC/PSNR --action=test --GOP=32`
+  * CANF-VC: `$ python test.py --Iframe=ANFIC --MENet=PWC --motion_coder_conf=./config/DVC_motion.yml --cond_motion_coder_conf=./config/CANF_motion_predprior.yml --residual_coder_conf=./config/CANF_inter_coder.yml --dataset={U/B/C/D/E/M} --dataset_path=/path/to/video_dataset --lmda={2048/1024/512/256} --model_dir=/path/to/CANF-VC/PSNR --action=test --GOP=32`
   * CANF-VC*:
   * CANF-VC Lite:
 
