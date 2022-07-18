@@ -196,8 +196,8 @@ class VideoTestData(torchData):
                     os.makedirs(os.path.dirname(bin_path), exist_ok=True)
                     os.makedirs(os.path.dirname(img_path), exist_ok=True)
 
-                    subprocess.call(f'/home/mapl119/libbpg/bpgenc -f 444 -q {self.qp} -o {bin_path} {raw_path}'.split(' '))
-                    subprocess.call(f'/home/mapl119/libbpg/bpgdec -o {img_path} {bin_path}'.split(' '))
+                    subprocess.call(f'bpgenc -f 444 -q {self.qp} -o {bin_path} {raw_path}'.split(' '))
+                    subprocess.call(f'bpgdec -o {img_path} {bin_path}'.split(' '))
 
                 imgs.append(transforms.ToTensor()(imgloader(img_path)))
             
