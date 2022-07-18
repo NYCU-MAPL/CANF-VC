@@ -5,12 +5,10 @@ model_params:
     num_filters: 128
     num_features: 128
     num_hyperpriors: 128
-    simplify_gdn: False
     in_channels: 2
     out_channels: 2
     kernel_size: 3
     use_mean: True
-    use_abs: False
     use_context: False
     condition: Gaussian
     quant_mode: noise

@@ -11,8 +11,6 @@ from subprocess import Popen, PIPE
 from subprocess import call
 
 import numpy as np
-#from msssim import MultiScaleSSIM
-from MS_SSIM import MultiScaleSSIM
 import matplotlib
 matplotlib.use('Agg')
 from matplotlib import pyplot as plt
@@ -70,6 +68,6 @@ for video_name, video_frames, frame_rate in zip (video_name_list, video_frames_l
     raw_png_root = osp.join(video_root, dataset, video_name)
     os.makedirs(raw_png_root, exist_ok=True)
 
-    command = "ffmpeg -y -pix_fmt yuv420p -s " + dim[0] + "x" + dim[1] + " -i " + raw_yuv + " " + raw_png_root + "/frame_%d.png"
+    command = "ffmpeg -y -pix_fmt yuv420p -s " + str(dim[0]) + "x" + str(dim[1]) + " -i " + raw_yuv + " " + raw_png_root + "/frame_%d.png"
     output, error = Popen(command, universal_newlines=True, shell=True, stdout=PIPE, stderr=PIPE).communicate()
     print(output)

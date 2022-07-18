@@ -12,13 +12,9 @@ model_params:
     kernel_size: 3
     num_layers: 2
     init_code: gaussian
-    use_DQ: True
-    share_wei: False
-    use_code: False
-    dec_add: False
-    use_attn: False
-    use_QE: False
+    use_QE: True
+    use_affine: False
     use_mean: True
     use_context: False
     condition: Gaussian
-    quant_mode: RUN
+    quant_mode: noise
