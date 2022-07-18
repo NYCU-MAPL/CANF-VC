@@ -119,6 +119,45 @@ class HyperPriorCoder(FactorizedCoder):
         return reconstructed
 
 
+class GoogleAnalysisTransform(nn.Sequential):
+    def __init__(self, in_channels, num_features, num_filters, kernel_size):
+        super(GoogleAnalysisTransform, self).__init__(
+            Conv2d(in_channels, num_filters, kernel_size, stride=2),
+            GeneralizedDivisiveNorm(num_filters),
+            Conv2d(num_filters, num_filters, kernel_size, stride=2),
+            GeneralizedDivisiveNorm(num_filters),
+            Conv2d(num_filters, num_filters, kernel_size, stride=2),
+            GeneralizedDivisiveNorm(num_filters),
+            Conv2d(num_filters, num_features, kernel_size, stride=2)
+        )
+
+
+class GoogleSynthesisTransform(nn.Sequential):
+    def __init__(self, out_channels, num_features, num_filters, kernel_size):
+        super(GoogleSynthesisTransform, self).__init__(
+            ConvTranspose2d(num_features, num_filters, kernel_size, stride=2),
+            GeneralizedDivisiveNorm(num_filters, inverse=True),
+            ConvTranspose2d(num_filters, num_filters, kernel_size, stride=2),
+            GeneralizedDivisiveNorm(num_filters, inverse=True),
+            ConvTranspose2d(num_filters, num_filters, kernel_size, stride=2),
+            GeneralizedDivisiveNorm(num_filters, inverse=True),
+            ConvTranspose2d(num_filters, out_channels, kernel_size, stride=2)
+        )
+
+class GoogleHyperScaleSynthesisTransform(nn.Sequential):
+    def __init__(self, num_features, num_filters, num_hyperpriors):
+        super(GoogleHyperScaleSynthesisTransform, self).__init__(
+            ConvTranspose2d(num_hyperpriors, num_filters,
+                            kernel_size=5, stride=2, parameterizer=None),
+            nn.ReLU(inplace=True),
+            ConvTranspose2d(num_filters, num_filters,
+                            kernel_size=5, stride=2, parameterizer=None),
+            nn.ReLU(inplace=True),
+            ConvTranspose2d(num_filters, num_features,
+                            kernel_size=3, stride=1, parameterizer=None)
+        )
+
+
 class GoogleHyperAnalysisTransform(nn.Sequential):
     def __init__(self, num_features, num_filters, num_hyperpriors):
         super(GoogleHyperAnalysisTransform, self).__init__(
@@ -142,6 +181,33 @@ class GoogleHyperSynthesisTransform(nn.Sequential):
             ConvTranspose2d(num_filters * 3 // 2, num_features,
                             kernel_size=3, stride=1)
         )
+
+
+class GoogleHyperPriorCoder(HyperPriorCoder):
+    """GoogleHyperPriorCoder"""
+
+    def __init__(self, num_filters, num_features, num_hyperpriors,
+                 in_channels=3, out_channels=3, kernel_size=5, 
+                 use_mean=False, use_context=False,
+                 condition='Gaussian', quant_mode='noise'):
+        super(GoogleHyperPriorCoder, self).__init__(
+            num_features, num_hyperpriors, use_mean, False, use_context, condition, quant_mode)
+        
+        self.analysis = GoogleAnalysisTransform(
+            in_channels, num_features, num_filters, kernel_size)
+
+        self.synthesis = GoogleSynthesisTransform(
+            out_channels, num_features, num_filters, kernel_size)
+
+        self.hyper_analysis = GoogleHyperAnalysisTransform(
+            num_features, num_filters, num_hyperpriors)
+
+        if self.use_mean:
+            self.hyper_synthesis = GoogleHyperSynthesisTransform(
+                num_features*self.conditional_bottleneck.condition_size, num_filters, num_hyperpriors)
+        else:
+            self.hyper_synthesis = GoogleHyperScaleSynthesisTransform(
+                num_features, num_filters, num_hyperpriors)
 
 
 class AugmentedNormalizedAnalysisTransform(AugmentedNormalizedFlow):
@@ -248,9 +314,9 @@ class AugmentedNormalizedFlowHyperPriorCoder(HyperPriorCoder):
             pass
 
         if use_QE:
-            self.QE = DeQuantizationModule(in_channels, in_channels, 64, 6)
+            self.DQ = DeQuantizationModule(in_channels, in_channels, 64, 6)
         else:
-            self.QE = None
+            self.DQ = None
 
     def __getitem__(self, key):
         return self.__getattr__(key)
@@ -385,13 +451,13 @@ class CondAugmentedNormalizedFlowHyperPriorCoder(HyperPriorCoder):
 
     def __init__(self, num_filters, num_features, num_hyperpriors,
                  in_channels=3, out_channels=3, kernel_size=5, num_layers=1, # Note: out_channels is useless
-                 init_code='gaussian', use_QE=False, use_affine=True,
+                 init_code='gaussian', use_QE=False, use_affine=False,
                  hyper_filters=192, use_mean=False, use_context=False,
                  condition='Gaussian', quant_mode='noise',
                  output_nought=True, # Set False when setting upper-left corner(x_2) as MC frame
                  cond_coupling=False, #Set True when applying conditional affine transform
                  num_cond_frames:int =1 # Set 1 when only MC frame is for condition ; >1 whwn multi-refertence frames as conditions
-                 ):
+                ):
         super(CondAugmentedNormalizedFlowHyperPriorCoder, self).__init__(
             num_features, num_hyperpriors, use_mean, False, use_context, condition, quant_mode)
         self.num_layers = num_layers
@@ -415,7 +481,6 @@ class CondAugmentedNormalizedFlowHyperPriorCoder(HyperPriorCoder):
                 # Make encoding transform conditional
                 self.add_module('analysis'+str(i), AugmentedNormalizedAnalysisTransform(
                     in_channels*(1+num_cond_frames), num_features, num_filters[i], kernel_size, 
-                    in_channels, num_features, num_filters[i], kernel_size, 
                     use_affine=use_affine and init_code != 'zeros', distribution=init_code))
                 # Keep decoding transform unconditional
                 self.add_module('synthesis'+str(i), AugmentedNormalizedSynthesisTransform(
@@ -435,9 +500,9 @@ class CondAugmentedNormalizedFlowHyperPriorCoder(HyperPriorCoder):
             pass
 
         if use_QE:
-            self.QE = DeQuantizationModule(in_channels, in_channels, 64, 6)
+            self.DQ = DeQuantizationModule(in_channels, in_channels, 64, 6)
         else:
-            self.QE = None
+            self.DQ = None
 
     def __getitem__(self, key):
         return self.__getattr__(key)
@@ -520,7 +585,7 @@ class CondAugmentedNormalizedFlowHyperPriorCoder(HyperPriorCoder):
             x_hat, code, jac = self.decode(
                 input, y_hat, jac, cond_coupling_input=cond_coupling_input)
             if self.use_QE:
-                x_hat = self.QE(x_hat)
+                x_hat = self.DQ(x_hat)
 
             return x_hat, [stream, side_stream], [hyperpriors.size()]
         else:
@@ -554,11 +619,11 @@ class CondAugmentedNormalizedFlowHyperPriorCoder(HyperPriorCoder):
             input, y_hat, jac, cond_coupling_input=cond_coupling_input)
 
         if self.use_QE:
-            reconstructed = self.QE(x_hat)
+            reconstructed = self.DQ(x_hat)
 
         return reconstructed
 
-    def forward(self, input, code=None, jac=None 
+    def forward(self, input, code=None, jac=None,
                 output=None, # Should assign value when self.output_nought==False
                 cond_coupling_input=None # Should assign value when self.cond_coupling==True
                                          # When using ANFIC on residual coding, output & cond_coupling_input should both be MC frame
@@ -586,7 +651,7 @@ class CondAugmentedNormalizedFlowHyperPriorCoder(HyperPriorCoder):
 
         if self.use_QE:       
             BDQ = input
-            input = self.QE(input)
+            input = self.DQ(input)
 
         return input, (y_likelihood, z_likelihood), x_2, jac, code, BDQ
 
@@ -683,7 +748,7 @@ class CondAugmentedNormalizedFlowHyperPriorCoderPredPrior(CondAugmentedNormalize
             x_hat, code, jac = self.decode(
                 input, y_hat, jac, cond_coupling_input=cond_coupling_input)
             if self.DQ is not None:
-                x_hat = self.QE(x_hat)
+                x_hat = self.DQ(x_hat)
 
             return x_hat, [stream, side_stream], [hyperpriors.size()]
         else:
@@ -722,13 +787,13 @@ class CondAugmentedNormalizedFlowHyperPriorCoderPredPrior(CondAugmentedNormalize
             input, y_hat, jac, cond_coupling_input=cond_coupling_input)
 
         if self.use_QE:
-            reconstructed = self.QE(x_hat)
+            reconstructed = self.DQ(x_hat)
 
         return reconstructed
 
-    def forward(self, input, code=None, jac=None 
+    def forward(self, input, code=None, jac=None,
                 output=None, # Should assign value when self.output_nought==False
-                cond_coupling_input=None # Should assign value when self.cond_coupling==True
+                cond_coupling_input=None, # Should assign value when self.cond_coupling==True
                                          # When using ANFIC on residual coding, output & cond_coupling_input should both be MC frame
                 pred_prior_input=None  # cond_coupling_input will replace this when None
                ):
@@ -757,7 +822,14 @@ class CondAugmentedNormalizedFlowHyperPriorCoderPredPrior(CondAugmentedNormalize
 
         if self.use_QE:
             BDQ = input
-            input = self.QE(input)
+            input = self.DQ(input)
 
         return input, (y_likelihood, z_likelihood), x_2, jac, code, BDQ
 
+
+__CODER_TYPES__ = {
+                   "GoogleHyperPriorCoder": GoogleHyperPriorCoder,
+                   "ANFHyperPriorCoder": AugmentedNormalizedFlowHyperPriorCoder,
+                   "CondANFHyperPriorCoder": CondAugmentedNormalizedFlowHyperPriorCoder,
+                   "CondANFHyperPriorCoderPredPrior": CondAugmentedNormalizedFlowHyperPriorCoderPredPrior,
+                  }
