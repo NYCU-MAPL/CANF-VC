@@ -107,7 +107,7 @@ class Pframe(CompressModel):
             flow = self.MENet(ref_frame, coding_frame)
             
             # Encode motion condioning on extrapolated motion
-            flow_hat, likelihood_m, _, _, _, _ = self.CondMotion(flow, output=pred_flow, 
+            flow_hat, likelihood_m, _, = self.CondMotion(flow, output=pred_flow, 
                                                                  cond_coupling_input=pred_flow, 
                                                                  pred_prior_input=pred_frame)
 
@@ -127,13 +127,14 @@ class Pframe(CompressModel):
     def forward(self, ref_frame, coding_frame, p_order=1):
         mc_frame, likelihood_m = self.motion_forward(ref_frame, coding_frame, p_order)
 
-        reconstructed, likelihood_r, _, _, _, _ = self.Residual(coding_frame, output=mc_frame, cond_coupling_input=mc_frame)
+        reconstructed, likelihood_r, _ = self.Residual(coding_frame, output=mc_frame, cond_coupling_input=mc_frame)
 
         likelihoods = likelihood_m + likelihood_r
         
         reconstructed = reconstructed.clamp(0, 1)
         return reconstructed, likelihoods
-
+    
+    @torch.no_grad()
     def test(self, action='test'):
         outputs = []
         for batch_idx, batch in tqdm(enumerate(self.test_loader)):
@@ -141,7 +142,7 @@ class Pframe(CompressModel):
                 outputs.append(self.test_step(batch, batch_idx))
             elif action == 'compress':
                 outputs.append(self.test_step(batch, batch_idx, TO_COMPRESS=True))
-            if action == 'test':
+            elif action == 'decompress':
                 outputs.append(self.decompress_step(batch, batch_idx))
         
         self.test_epoch_end(outputs)
@@ -227,8 +228,6 @@ class Pframe(CompressModel):
                     rec_frame = rec_frame.clamp(0, 1)
                     self.frame_buffer.append(rec_frame)
 
-                    likelihoods = likelihood_m + likelihood_r
-                    
                     # Back to original resolution
                     rec_frame = align.resume(rec_frame)
                     rate = estimate_bpp(likelihoods, input=coding_frame).mean().item()
@@ -249,8 +248,10 @@ class Pframe(CompressModel):
                     metrics['Mo_Rate'].append(m_rate)
                 
                     log_list.append({similarity_metrics: similarity, 'Rate': rate, 'Mo_Rate': m_rate,
-                                     'my': estimate_bpp(likelihoods[0]).item(), 'mz': estimate_bpp(likelihoods[1]).item(),
-                                     'ry': estimate_bpp(likelihoods[2]).item(), 'rz': estimate_bpp(likelihoods[3]).item()})
+                                     'my': estimate_bpp(likelihoods[0], input=coding_frame).item(),
+                                     'mz': estimate_bpp(likelihoods[1], input=coding_frame).item(),
+                                     'ry': estimate_bpp(likelihoods[2], input=coding_frame).item(),
+                                     'rz': estimate_bpp(likelihoods[3], input=coding_frame).item()})
 
                 # Update frame buffer
                 if len(self.frame_buffer) == 4:
@@ -272,7 +273,7 @@ class Pframe(CompressModel):
                     rate = size_byte * 8 / height / width
 
                 elif self.args.Iframe:
-                    rec_frame, likelihoods, _, _, _, _ = self.if_model(align.align(coding_frame))
+                    rec_frame, likelihoods, _ = self.if_model(align.align(coding_frame))
                     rec_frame = align.resume(rec_frame).clamp(0, 1)
                     rate = estimate_bpp(likelihoods, input=rec_frame).mean().item()
 
@@ -384,13 +385,10 @@ class Pframe(CompressModel):
 
         print(print_log)
 
-
         os.makedirs(self.args.logs_dir, exist_ok=True)
         with open(self.args.logs_dir + f'/brief_summary.txt', 'w', newline='') as report:
             report.write(print_log)
 
-        self.log_dict(logs)
-    
     def decompress_step(self, batch, batch_idx):
         metrics_name = ['Rate']
         metrics = {}
@@ -414,10 +412,10 @@ class Pframe(CompressModel):
         self.frame_buffer = list()
 
         for frame_idx in range(gop_size):
-            ref_frame = ref_frame.clamp(0, 1)
-
             # P-frame
             if frame_idx != 0:
+                ref_frame = ref_frame.clamp(0, 1)
+
                 if frame_idx == 1:
                     self.frame_buffer = [align.align(ref_frame)]
                 
@@ -575,6 +573,12 @@ class Pframe(CompressModel):
             self.test_dataset = VideoTestData(self.args.dataset_path, self.args.lmda, sequence=(self.args.dataset), GOP=self.args.GOP)
         self.test_loader = DataLoader(self.test_dataset, batch_size=1, num_workers=4, shuffle=False)
 
+        if self.args.action == "compress":
+            self.if_model.conditional_bottleneck.to("cpu")
+            self.Motion.conditional_bottleneck.to("cpu")
+            self.CondMotion.conditional_bottleneck.to("cpu")
+            self.Residual.conditional_bottleneck.to("cpu")
+
 
 if __name__ == '__main__':
     # sets seeds for numpy, torch, etc...
@@ -648,4 +652,6 @@ if __name__ == '__main__':
     
     model.setup()
 
-    model.test()
+    model.eval()
+
+    model.test(action=args.action)

@@ -131,3 +131,4 @@ dmypy.json
 # model weight & dataset path
 models/**
 video_dataset/**
+logs/**
