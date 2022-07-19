@@ -118,6 +118,23 @@ class HyperPriorCoder(FactorizedCoder):
 
         return reconstructed
 
+    def forward(self, input):
+        features = self.analysis(input)
+
+        hyperpriors = self.hyper_analysis(
+            features.abs() if self.use_abs else features)
+
+        z_tilde, z_likelihood = self.entropy_bottleneck(hyperpriors)
+
+        condition = self.hyper_synthesis(z_tilde)
+
+        y_tilde, y_likelihood = self.conditional_bottleneck(
+            features, condition=condition)
+
+        reconstructed = self.synthesis(y_tilde)
+
+        return reconstructed, (y_likelihood, z_likelihood)
+
 
 class GoogleAnalysisTransform(nn.Sequential):
     def __init__(self, in_channels, num_features, num_filters, kernel_size):
@@ -286,6 +303,7 @@ class AugmentedNormalizedFlowHyperPriorCoder(HyperPriorCoder):
                  condition='Gaussian', quant_mode='noise'):
         super(AugmentedNormalizedFlowHyperPriorCoder, self).__init__(
             num_features, num_hyperpriors, use_mean, False, use_context, condition, quant_mode)
+        self.use_QE = use_QE
         self.num_layers = num_layers
         if not isinstance(num_filters, list):
             num_filters = [num_filters]
@@ -313,7 +331,7 @@ class AugmentedNormalizedFlowHyperPriorCoder(HyperPriorCoder):
         else:
             pass
 
-        if use_QE:
+        if self.use_QE:
             self.DQ = DeQuantizationModule(in_channels, in_channels, 64, 6)
         else:
             self.DQ = None
@@ -336,8 +354,7 @@ class AugmentedNormalizedFlowHyperPriorCoder(HyperPriorCoder):
                 input, code, jac, rev=True, last_layer=i == self.num_layers-1)
 
             if i or jac is not None:
-                _, code, jac = self['analysis' +
-                                    str(i)](input, code, jac, rev=True)
+                _, code, jac = self['analysis' + str(i)](input, code, jac, rev=True)
 
         return input, code, jac
 
@@ -381,8 +398,8 @@ class AugmentedNormalizedFlowHyperPriorCoder(HyperPriorCoder):
 
             x_hat = self.decode(None, z_hat, jac=None)[0]
 
-            if self.QE is not None:
-                x_hat = self.QE(x_hat)
+            if self.use_QE:
+                x_hat = self.DQ(x_hat)
 
             return x_hat, [stream, side_stream], [z_hat.size(), h_hat.size()]
         else:
@@ -402,8 +419,8 @@ class AugmentedNormalizedFlowHyperPriorCoder(HyperPriorCoder):
 
         reconstructed = self.decode(None, z_hat, jac=None)[0]
 
-        if self.QE is not None:
-            reconstructed = self.QE(reconstructed)
+        if self.use_QE:
+            reconstructed = self.DQ(reconstructed)
 
         return reconstructed
 
@@ -440,8 +457,8 @@ class AugmentedNormalizedFlowHyperPriorCoder(HyperPriorCoder):
         # Decode
         input, code, jac = self.decode(input, code, jac)
 
-        if self.QE is not None:
-            input = self.QE(input)
+        if self.use_QE:
+            input = self.DQ(input)
 
         return input, (y_likelihood, z_likelihood), Y_error
 
@@ -460,6 +477,7 @@ class CondAugmentedNormalizedFlowHyperPriorCoder(HyperPriorCoder):
                 ):
         super(CondAugmentedNormalizedFlowHyperPriorCoder, self).__init__(
             num_features, num_hyperpriors, use_mean, False, use_context, condition, quant_mode)
+        self.use_QE = use_QE
         self.num_layers = num_layers
         self.output_nought=output_nought
         self.cond_coupling = cond_coupling
@@ -499,7 +517,7 @@ class CondAugmentedNormalizedFlowHyperPriorCoder(HyperPriorCoder):
         else:
             pass
 
-        if use_QE:
+        if self.use_QE:
             self.DQ = DeQuantizationModule(in_channels, in_channels, 64, 6)
         else:
             self.DQ = None
@@ -522,7 +540,7 @@ class CondAugmentedNormalizedFlowHyperPriorCoder(HyperPriorCoder):
 
         return input, code, jac
 
-    def decode(self, input, code=None, jac=None):
+    def decode(self, input, code=None, jac=None, cond_coupling_input=None):
         for i in range(self.num_layers-1, -1, -1):
             input, _, jac = self['synthesis'+str(i)](input, code, jac, rev=True, last_layer=i == self.num_layers-1)
 
@@ -531,9 +549,9 @@ class CondAugmentedNormalizedFlowHyperPriorCoder(HyperPriorCoder):
                 if self.cond_coupling:
                     cond = cond_coupling_input
                     cond_input = torch.cat([input, cond], dim=1)
-                    _, code, jac = self['analysis'+str(i)](cond_input, code, jac, layer=i, rev=True)
+                    _, code, jac = self['analysis'+str(i)](cond_input, code, jac, rev=True)
                 else:
-                    _, code, jac = self['analysis'+str(i)](input, code, jac, layer=i, rev=True)
+                    _, code, jac = self['analysis'+str(i)](input, code, jac, rev=True)
 
         return input, code, jac
 
@@ -558,7 +576,7 @@ class CondAugmentedNormalizedFlowHyperPriorCoder(HyperPriorCoder):
         code = None
         jac = None
         input, features, jac = self.encode(
-            input, code, jac, visual=visual, figname=figname, cond_coupling_input=cond_coupling_input)
+            input, code, jac, cond_coupling_input=cond_coupling_input)
 
         hyperpriors = self.hyper_analysis(
             features.abs() if self.use_abs else features)
@@ -638,7 +656,7 @@ class CondAugmentedNormalizedFlowHyperPriorCoder(HyperPriorCoder):
         input, code, jac = self.encode(input, code, jac, cond_coupling_input=cond_coupling_input)
 
         # Entropy model
-        y_tilde, z_tilde, y_likelihood, z_likelihood = entropy_model(input, code)
+        y_tilde, z_tilde, y_likelihood, z_likelihood = self.entropy_model(input, code)
 
         # Encode distortion (last synthesis transform)
         x_2, _, jac = self['synthesis'+str(self.num_layers-1)](input, y_tilde, jac, last_layer=True, layer=self.num_layers-1)
@@ -653,7 +671,7 @@ class CondAugmentedNormalizedFlowHyperPriorCoder(HyperPriorCoder):
             BDQ = input
             input = self.DQ(input)
 
-        return input, (y_likelihood, z_likelihood), x_2, jac, code, BDQ
+        return input, (y_likelihood, z_likelihood), x_2
 
 
 class CondAugmentedNormalizedFlowHyperPriorCoderPredPrior(CondAugmentedNormalizedFlowHyperPriorCoder):
@@ -718,7 +736,7 @@ class CondAugmentedNormalizedFlowHyperPriorCoderPredPrior(CondAugmentedNormalize
         code = None
         jac = None
         input, features, jac = self.encode(
-            input, code, jac, visual=visual, figname=figname, cond_coupling_input=cond_coupling_input)
+            input, code, jac, cond_coupling_input=cond_coupling_input)
 
         hyperpriors = self.hyper_analysis(
             features.abs() if self.use_abs else features)
@@ -807,24 +825,24 @@ class CondAugmentedNormalizedFlowHyperPriorCoderPredPrior(CondAugmentedNormalize
         # Encode
         jac = [] if jac else None
         input, code, jac = self.encode(
-            input, code, jac, visual=visual, cond_coupling_input=cond_coupling_input)
+            input, code, jac, cond_coupling_input=cond_coupling_input)
 
         # Enrtopy coding
-        y_tilde, z_tilde, y_likelihood, z_likelihood = entropy_model(input, code, pred_prior_input)
+        y_tilde, z_tilde, y_likelihood, z_likelihood = self.entropy_model(input, code, pred_prior_input)
         
         # Encode distortion
-        x_2, _, jac = self['synthesis' + str(self.num_layers - 1)](input, y_tilde, jac, last_layer=True, layer=self.num_layers - 1)
+        x_2, _, jac = self['synthesis' + str(self.num_layers - 1)](input, y_tilde, jac, last_layer=True)
 
         input, code, hyper_code = output, y_tilde, z_tilde  # MC frame as x_2 when decoding
 
         # Decode
-        input, code, jac = self.decode(input, code, jac, rec_code=rec_code, cond_coupling_input=cond_coupling_input)
+        input, code, jac = self.decode(input, code, jac, cond_coupling_input=cond_coupling_input)
 
         if self.use_QE:
             BDQ = input
             input = self.DQ(input)
 
-        return input, (y_likelihood, z_likelihood), x_2, jac, code, BDQ
+        return input, (y_likelihood, z_likelihood), x_2
 
 
 __CODER_TYPES__ = {

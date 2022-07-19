@@ -16,7 +16,7 @@ matplotlib.use('Agg')
 from matplotlib import pyplot as plt
 
 video_root = './video_dataset'
-dataset = 'U' # 'U', 'B', 'C', 'D', 'E', 'M'
+dataset = 'D' # 'U', 'B', 'C', 'D', 'E', 'M'
 
 video_name_list = {
     'U': ['Beauty', 'Bosphorus', 'HoneyBee', 'Jockey', 'ReadySteadyGo', 'ShakeNDry', 'YachtRide'],
@@ -41,8 +41,8 @@ video_frames_list = {
 frame_rate_list = {
     'U': [120]*7,
     'B': [50, 60, 50, 24, 24],
-    'C': [30, 60, 50, 50],
-    'D': [30, 60, 50, 50],
+    'C': [50, 60, 50, 30],
+    'D': [50, 60, 50, 30],
     'E': [60, 60, 60],
     'M': [30, 30, 30, 30, 25, 25, 25, 25, 25, 30,
           30, 30, 30, 30, 30, 30, 24, 25, 30, 25,
@@ -70,4 +70,4 @@ for video_name, video_frames, frame_rate in zip (video_name_list, video_frames_l
 
     command = "ffmpeg -y -pix_fmt yuv420p -s " + str(dim[0]) + "x" + str(dim[1]) + " -i " + raw_yuv + " " + raw_png_root + "/frame_%d.png"
     output, error = Popen(command, universal_newlines=True, shell=True, stdout=PIPE, stderr=PIPE).communicate()
-    print(output)
+    print(error)
