@@ -14,7 +14,7 @@ from entropy_models import EntropyBottleneck, estimate_bpp
 from networks import __CODER_TYPES__, AugmentedNormalizedFlowHyperPriorCoder
 from torchvision import transforms
 
-from dataloader import VideoTestData, BitstreamData
+from dataloader import VideoTestData, VideoTestSequence, BitstreamData, BitstreamSequence
 from flownets import PWCNet, SPyNet
 from SDCNet import MotionExtrapolationNet
 from models import Refinement
@@ -196,14 +196,16 @@ class Pframe(CompressModel):
                 if TO_COMPRESS:
                     if frame_idx == 1:
                         self.frame_buffer = [align.align(ref_frame)]
-
-                    file_name = os.path.join(file_pth, f'{frame_idx}.bin')
+                    
+                    file_name = os.path.join(file_pth, f'{int(frame_id_start+frame_idx)}.bin')
                     rec_frame, streams, shapes = self.compress(align.align(ref_frame), align.align(coding_frame), frame_idx)
+                    rec_frame = rec_frame.clamp(0, 1)
+                    self.frame_buffer.append(rec_frame)
                     
                     with BitStreamIO(file_name, 'w') as fp:
                         fp.write(streams, [coding_frame.size()]+shapes)
 
-                    rec_frame = align.resume(rec_frame).clamp(0, 1)
+                    rec_frame = align.resume(rec_frame)
 
                     # Read the binary files directly for accurate bpp estimate.
                     size_byte = os.path.getsize(file_name)
@@ -260,21 +262,23 @@ class Pframe(CompressModel):
             
             # I-frame
             else:
-                if TO_COMPRESS and self.args.Iframe == 'ANFIC':
-                    file_name = os.path.join(file_pth, f'{frame_idx}.bin')
-                    rec_frame, streams, shapes = self.if_model.compress(align.align(coding_frame), return_hat=True)
-                    
-                    with BitStreamIO(file_name, 'w') as fp:
-                        fp.write(streams, [coding_frame.size()]+shapes)
+                #if TO_COMPRESS and self.args.Iframe == 'ANFIC':
+                #    file_name = os.path.join(file_pth, f'{int(frame_id_start+frame_idx)}.bin')
+                #    rec_frame, streams, shapes = self.if_model.compress(align.align(coding_frame), return_hat=True)
+                #    
+                #    with BitStreamIO(file_name, 'w') as fp:
+                #        fp.write(streams, [coding_frame.size()]+shapes)
 
-                    rec_frame = align.resume(rec_frame.to(DEVICE)).clamp(0, 1)
-                    # Read the binary files directly for accurate bpp estimate.
-                    size_byte = os.path.getsize(file_name)
-                    rate = size_byte * 8 / height / width
+                #    rec_frame = align.resume(rec_frame.to(DEVICE)).clamp(0, 1)
+                #    # Read the binary files directly for accurate bpp estimate.
+                #    size_byte = os.path.getsize(file_name)
+                #    rate = size_byte * 8 / height / width
 
-                elif self.args.Iframe:
+                #elif self.args.Iframe == 'ANFIC':
+                if self.args.Iframe == 'ANFIC':
+                    self.if_model.conditional_bottleneck.to(DEVICE)
                     rec_frame, likelihoods, _ = self.if_model(align.align(coding_frame))
-                    rec_frame = align.resume(rec_frame).clamp(0, 1)
+                    rec_frame = align.resume(rec_frame.to(DEVICE)).clamp(0, 1)
                     rate = estimate_bpp(likelihoods, input=rec_frame).mean().item()
 
                 else:
@@ -283,7 +287,7 @@ class Pframe(CompressModel):
 
                     # Read the binary files directly for accurate bpp estimate
                     # One should refer to `dataloader.py` to see the setting of BPG binary file path
-                    size_byte = os.path.getsize(f'{self.args.dataset_path}/bpg/{qp}/bin/{seq_name}/frame_{frame_idx}.bin')
+                    size_byte = os.path.getsize(f'{self.args.dataset_path}/bpg/{qp}/bin/{seq_name}/frame_{int(frame_id_start+frame_idx)}.bin')
                     rate = size_byte * 8 / height / width
 
                 if self.args.msssim:
@@ -304,7 +308,6 @@ class Pframe(CompressModel):
             metrics[m] = np.mean(metrics[m])
 
         logs = {'dataset_name': dataset_name, 'seq_name': seq_name, 'metrics': metrics, 'log_list': log_list,}
-
         return {'test_log': logs}
 
     def test_epoch_end(self, outputs):
@@ -419,14 +422,17 @@ class Pframe(CompressModel):
                 if frame_idx == 1:
                     self.frame_buffer = [align.align(ref_frame)]
                 
-                file_name = batch[frame_idx]
+                file_name = batch[frame_idx][0]
 
                 with BitStreamIO(file_name, 'r') as fp:
                     stream_list, shape_list = fp.read_file()
                 
                 rec_frame = self.decompress(align.align(ref_frame), stream_list, shape_list[1:], frame_idx).to(DEVICE)
-                rec_frame = align.resume(rec_frame, shape=shape_list[0]).clamp(0, 1)
+                rec_frame = rec_frame.clamp(0, 1)
+                self.frame_buffer.append(rec_frame)
+                rec_frame = align.resume(rec_frame, shape=shape_list[0])
 
+                height, width = shape_list[0][2:]
                 # Read the binary files directly for accurate bpp estimate.
                 size_byte = os.path.getsize(file_name)
                 rate = size_byte * 8 / height / width
@@ -443,15 +449,15 @@ class Pframe(CompressModel):
             # I-frame
             else:
                 if self.args.Iframe == 'ANFIC':
-                    file_name = batch[frame_idx]
-
+                    file_name = batch[frame_idx][0]
                     with BitStreamIO(file_name, 'r') as fp:
                         stream_list, shape_list = fp.read_file()
                     
                     rec_frame = self.if_model.decompress(stream_list, shape_list[1:]).to(DEVICE)
                     rec_frame = align.resume(rec_frame, shape=shape_list[0]).clamp(0, 1)
-
+                    
                     # Read the binary files directly for accurate bpp estimate.
+                    height, width = shape_list[0][2:]
                     size_byte = os.path.getsize(file_name)
                     rate = size_byte * 8 / height / width
                 else:
@@ -460,7 +466,8 @@ class Pframe(CompressModel):
 
                     # Read the binary files directly for accurate bpp estimate
                     # One should refer to `dataloader.py` to see the setting of BPG binary file path
-                    size_byte = os.path.getsize(f'{self.args.dataset_path}/bpg/{qp}/bin/{seq_name}/frame_{frame_idx}.bin')
+                    height, width = rec_frame.size()[2:]
+                    size_byte = os.path.getsize(f'{self.args.dataset_path}/bpg/{qp}/bin/{seq_name}/frame_{int(frame_id_start+frame_idx)}.bin')
                     rate = size_byte * 8 / height / width
 
                 metrics['Rate'].append(rate)
@@ -512,21 +519,19 @@ class Pframe(CompressModel):
 
         self.MWNet.append_flow(flow_hat)
 
-        strings, shapes = [mv_strings], [mv_shape]
-
         reconstructed, res_strings, res_shape = self.Residual.compress(coding_frame, 
-                                                                       output=mc_frame, 
+                                                                       reverse_input=mc_frame, 
                                                                        cond_coupling_input=mc_frame, 
                                                                        return_hat=True)
-        strings.append(res_strings)
-        shapes.append(res_shape)
+
+        strings, shapes = mv_strings + res_strings, mv_shape + res_shape
 
         return reconstructed, strings, shapes
 
     def decompress(self, ref_frame, strings, shapes, p_order):
         predict = p_order > 1 
 
-        mv_strings, mv_shape = strings[0], shapes[0]
+        mv_strings, mv_shape = strings[:2], shapes[:2]
 
         if predict:
             assert len(self.frame_buffer) == 3 or len(self.frame_buffer) == 2
@@ -556,25 +561,37 @@ class Pframe(CompressModel):
 
         self.MWNet.append_flow(flow_hat)
 
-        strings, shapes = [mv_strings], [mv_shape]
-
-        res_strings, res_shape = strings[1], shapes[1]
-        reconstructed = self.CondMotion.decompress(res_strings, res_shape,
-                                                   reverse_input=mc_frame, 
-                                                   cond_coupling_input=mc_frame)
+        res_strings, res_shape = strings[2:], shapes[2:]
+        reconstructed = self.Residual.decompress(res_strings, res_shape,
+                                                 reverse_input=mc_frame, 
+                                                 cond_coupling_input=mc_frame)
         return reconstructed
 
     def setup(self):
         qp = {256: 37, 512: 32, 1024: 27, 2048: 22, 4096: 22}[self.args.lmda]
         
-        if not (self.args.seq is None):
-            self.test_dataset = VideoTestSequence(self.args.dataset_path, self.args.lmda, dataset=self.args.dataset, sequence=self.args.seq, GOP=self.args.GOP)
-        else:
-            self.test_dataset = VideoTestData(self.args.dataset_path, self.args.lmda, sequence=(self.args.dataset), GOP=self.args.GOP)
+        if not (self.args.seq is None): # Test a single sequence
+            if self.args.action == "test" or self.args.action == "compress":
+                self.test_dataset = VideoTestSequence(self.args.dataset_path, self.args.lmda,
+                                                      self.args.dataset, self.args.seq, self.args.seq_len, self.args.GOP)
+            else:
+                self.test_dataset = BitstreamSequence(self.args.dataset_path, self.args.lmda,
+                                                      self.args.dataset, self.args.seq, self.args.seq_len, self.args.GOP,
+                                                      self.args.bitstream_dir, self.args.Iframe=='BPG'
+                                                     )
+        else: # Test whole dataset
+            if self.args.action == "test" or self.args.action == "compress":
+                self.test_dataset = VideoTestData(self.args.dataset_path, self.args.lmda, (self.args.dataset), self.args.GOP)
+            else:
+                self.test_dataset = BitstreamData(self.args.dataset_path, self.args.lmda, (self.args.dataset), self.args.GOP,
+                                                  self.args.bitstream_dir, self.args.Iframe=='BPG'
+                                                 )
+
         self.test_loader = DataLoader(self.test_dataset, batch_size=1, num_workers=4, shuffle=False)
 
-        if self.args.action == "compress":
-            self.if_model.conditional_bottleneck.to("cpu")
+        if self.args.action == "compress" or self.args.action == "decompress":
+            if self.args.Iframe == 'ANFIC':
+                self.if_model.conditional_bottleneck.to("cpu")
             self.Motion.conditional_bottleneck.to("cpu")
             self.CondMotion.conditional_bottleneck.to("cpu")
             self.Residual.conditional_bottleneck.to("cpu")
@@ -605,6 +622,7 @@ if __name__ == '__main__':
     # Dataset configuration
     parser.add_argument('--dataset', type=str, choices=['U', 'B', 'C', 'D', 'E', 'M'], default=None)
     parser.add_argument('--seq', type=str, default=None, help='Specify a sequence to be encoded')
+    parser.add_argument('--seq_len', type=int, default=100, help='The length of specified sequence')
     parser.add_argument('--dataset_path', default='./video_dataset', type=str)
     parser.add_argument('--bitstream_dir', default='./bin', type=str, help='Path to store binary files generated when `compress` and used when `decompress`')
 

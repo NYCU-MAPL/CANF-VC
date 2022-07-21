@@ -14,23 +14,24 @@ from subprocess import Popen, PIPE
 from util.vision import imgloader, rgb_transform
 from PIL import Image
 
+libbpg_path = "/home/mapl119/libbpg/" # Put your libbpg path here
 
 class VideoTestSequence(torchData):
     def __init__(self, root, lmda, dataset='U', sequence='Beauty', seq_len=600, GOP=12):
-        super(VideoTestDataset, self).__init__()
+        super(VideoTestSequence, self).__init__()
 
-        assert os.exists(os.path.join(self.root, dataset_name, seq_name)), \
-            f'FileNotFoundError: sequence is not found (path: {os.path.join(self.root, dataset_name, seq_name)})'
-        
         self.root = root
         self.lmda = lmda
         self.qp = {256: 37, 512: 32, 1024: 27, 2048: 22, 4096: 22}[lmda]
 
-        if not (seq_len % 600):
-            print(f'Warning: GOP={GOP} cannot divide seq_len={seq_len} ; Only the first {seq_len - seq_len//GOP} will be coded')
+        assert os.path.exists(os.path.join(self.root, dataset, sequence)), \
+            f'FileNotFoundError: sequence is not found (path: {os.path.join(self.root, dataset, sequence)})'
+        
+        if not (seq_len % seq_len):
+            print(f'Warning: GOP={GOP} cannot divide seq_len={seq_len} ; Only the first {seq_len - seq_len % GOP} will be coded')
 
-        self.seq_name = []
-        seq_len = [seq_len - seq_len//GOP]
+        self.seq_name = [sequence]
+        seq_len = [seq_len - seq_len % GOP]
         gop_size = [GOP]
         dataset_name_list = [dataset]
 
@@ -63,7 +64,7 @@ class VideoTestSequence(torchData):
 
             if frame_idx == frame_start:
                 img_root = os.path.join(self.root, 'bpg', str(self.qp), 'decoded', seq_name)
-                os.mkdirs(img_root, exist_ok=True)
+                os.makedirs(img_root, exist_ok=True)
 
                 img_path = os.path.join(img_root, f'frame_{frame_idx}.png')
 
@@ -74,8 +75,8 @@ class VideoTestSequence(torchData):
                     os.makedirs(os.path.dirname(bin_path), exist_ok=True)
                     os.makedirs(os.path.dirname(img_path), exist_ok=True)
 
-                    subprocess.call(f'bpgenc -f 444 -q {self.qp} -o {bin_path} {raw_path}'.split(' '))
-                    subprocess.call(f'bpgdec -o {img_path} {bin_path}'.split(' '))
+                    subprocess.call(f'{libbpg_path}/bpgenc -f 444 -q {self.qp} -o {bin_path} {raw_path}'.split(' '))
+                    subprocess.call(f'{libbpg_path}/bpgdec -o {img_path} {bin_path}'.split(' '))
 
                 imgs.append(transforms.ToTensor()(imgloader(img_path)))
             
@@ -196,8 +197,8 @@ class VideoTestData(torchData):
                     os.makedirs(os.path.dirname(bin_path), exist_ok=True)
                     os.makedirs(os.path.dirname(img_path), exist_ok=True)
 
-                    subprocess.call(f'/home/mapl119/libbpg/bpgenc -f 444 -q {self.qp} -o {bin_path} {raw_path}'.split(' '))
-                    subprocess.call(f'/home/mapl119/libbpg/bpgdec -o {img_path} {bin_path}'.split(' '))
+                    subprocess.call(f'{libbpg_path}/bpgenc -f 444 -q {self.qp} -o {bin_path} {raw_path}'.split(' '))
+                    subprocess.call(f'{libbpg_path}/bpgdec -o {img_path} {bin_path}'.split(' '))
 
                 imgs.append(transforms.ToTensor()(imgloader(img_path)))
             
@@ -222,7 +223,7 @@ class BitstreamData(VideoTestData):
 
             if frame_idx == frame_start and self.load_Iframe:
                 img_root = os.path.join(self.root, 'bpg', str(self.qp), 'decoded', seq_name)
-                os.mkdirs(img_root, exist_ok=True)
+                os.makedirs(img_root, exist_ok=True)
 
                 img_path = os.path.join(img_root, f'frame_{frame_idx}.png')
 
@@ -233,8 +234,46 @@ class BitstreamData(VideoTestData):
                     os.makedirs(os.path.dirname(bin_path), exist_ok=True)
                     os.makedirs(os.path.dirname(img_path), exist_ok=True)
 
-                    subprocess.call(f'bpgenc -f 444 -q {self.qp} -o {bin_path} {raw_path}'.split(' '))
-                    subprocess.call(f'bpgdec -o {img_path} {bin_path}'.split(' '))
+                    subprocess.call(f'{libbpg_path}/bpgenc -f 444 -q {self.qp} -o {bin_path} {raw_path}'.split(' '))
+                    subprocess.call(f'{libbpg_path}/bpgdec -o {img_path} {bin_path}'.split(' '))
+
+                filenames.append(transforms.ToTensor()(imgloader(img_path)))
+
+            else:
+                filenames.append(filename)
+
+        return dataset_name, seq_name, filenames, frame_start
+
+
+class BitstreamSequence(VideoTestSequence):
+    def __init__(self, root, lmda, dataset='U', sequence='Beauty', seq_len=600, GOP=12, bin_root='./bin', load_Iframe=True):
+        super(BitstreamSequence, self).__init__(root, lmda, dataset, sequence, seq_len, GOP)
+        self.bin_root = bin_root
+        self.load_Iframe = load_Iframe # If False, ignore I-frame. Design for BPG-compressed I-frame
+
+    def __getitem__(self, idx):
+        dataset_name, seq_name, frame_start, frame_end = self.gop_list[idx]
+        filenames = []
+         
+        for frame_idx in range(frame_start, frame_end):
+
+            filename = os.path.join(self.bin_root, dataset_name, seq_name, f'{frame_idx}.bin')
+
+            if frame_idx == frame_start and self.load_Iframe:
+                img_root = os.path.join(self.root, 'bpg', str(self.qp), 'decoded', seq_name)
+                os.makedirs(img_root, exist_ok=True)
+
+                img_path = os.path.join(img_root, f'frame_{frame_idx}.png')
+
+                if not os.path.exists(img_path):
+                    # Compress data on-the-fly when they are not previously compressed.
+                    bin_path = img_path.replace('decoded', 'bin').replace('png', 'bin')
+
+                    os.makedirs(os.path.dirname(bin_path), exist_ok=True)
+                    os.makedirs(os.path.dirname(img_path), exist_ok=True)
+
+                    subprocess.call(f'{libbpg_path}/bpgenc -f 444 -q {self.qp} -o {bin_path} {raw_path}'.split(' '))
+                    subprocess.call(f'{libbpg_path}/bpgdec -o {img_path} {bin_path}'.split(' '))
 
                 filenames.append(transforms.ToTensor()(imgloader(img_path)))
 
