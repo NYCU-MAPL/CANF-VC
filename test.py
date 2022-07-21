@@ -262,21 +262,19 @@ class Pframe(CompressModel):
             
             # I-frame
             else:
-                #if TO_COMPRESS and self.args.Iframe == 'ANFIC':
-                #    file_name = os.path.join(file_pth, f'{int(frame_id_start+frame_idx)}.bin')
-                #    rec_frame, streams, shapes = self.if_model.compress(align.align(coding_frame), return_hat=True)
-                #    
-                #    with BitStreamIO(file_name, 'w') as fp:
-                #        fp.write(streams, [coding_frame.size()]+shapes)
+                if TO_COMPRESS and self.args.Iframe == 'ANFIC':
+                    file_name = os.path.join(file_pth, f'{int(frame_id_start+frame_idx)}.bin')
+                    rec_frame, streams, shapes = self.if_model.compress(align.align(coding_frame), return_hat=True)
+                    
+                    with BitStreamIO(file_name, 'w') as fp:
+                        fp.write(streams, [coding_frame.size()]+shapes)
 
-                #    rec_frame = align.resume(rec_frame.to(DEVICE)).clamp(0, 1)
-                #    # Read the binary files directly for accurate bpp estimate.
-                #    size_byte = os.path.getsize(file_name)
-                #    rate = size_byte * 8 / height / width
+                    rec_frame = align.resume(rec_frame.to(DEVICE)).clamp(0, 1)
+                    # Read the binary files directly for accurate bpp estimate.
+                    size_byte = os.path.getsize(file_name)
+                    rate = size_byte * 8 / height / width
 
-                #elif self.args.Iframe == 'ANFIC':
-                if self.args.Iframe == 'ANFIC':
-                    self.if_model.conditional_bottleneck.to(DEVICE)
+                elif self.args.Iframe == 'ANFIC':
                     rec_frame, likelihoods, _ = self.if_model(align.align(coding_frame))
                     rec_frame = align.resume(rec_frame.to(DEVICE)).clamp(0, 1)
                     rate = estimate_bpp(likelihoods, input=rec_frame).mean().item()
