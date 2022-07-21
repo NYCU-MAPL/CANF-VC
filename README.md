@@ -10,12 +10,12 @@
 * CANF-VC: https://drive.google.com/drive/folders/1fj8sb_CMktyJ_yU0Yf2lbZjzxVYAGvUw?usp=sharing
 * CANF-VC*: https://drive.google.com/drive/folders/19gZlrhk1ONNbLpqfD9DTSCBWvh-uSamJ?usp=sharing
 * CANF-VC Lite: https://drive.google.com/drive/folders/1e5WSsGhuqKh8b8VS9QGczx0XeQDHu-cs?usp=sharing
-* Submodules: https://drive.google.com/file/d/1-JNDD-sfDVyDpSUHKL8a6_dYC1Qf5Y-F/view?usp=sharing
+* Submodules: https://drive.google.com/drive/folders/1mjyGyyxgAxdFpzvesYYnBwRHF-0VKdnm?usp=sharing
   > Should be put under this project directory
 
 ## Dataset
 * Prepare all of your video sequence (in `.png` format), or
-* [Download all datasets](https://drive.google.com/file/d/1eAZezoiARHXN-GpoDn2LlmnhtphSGzVu/view?usp=sharing):
+* [Download all datasets](https://drive.google.com/file/d/1-JNDD-sfDVyDpSUHKL8a6_dYC1Qf5Y-F/view?usp=sharing):
   * Including:
     * `U` for UVG dataset
     * `B`, `C`, `D`, `E` for HEVC-B, -C, -D, -E dataset
