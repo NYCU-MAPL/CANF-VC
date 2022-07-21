@@ -30,7 +30,12 @@
 * CANF-VC (PSNR): 
   * `test`: `$ python3 test.py --Iframe=ANFIC --MENet=PWC --motion_coder_conf=./config/DVC_motion.yml --cond_motion_coder_conf=./config/CANF_motion_predprior.yml --residual_coder_conf=./config/CANF_inter_coder.yml --dataset=D --dataset_path=./video_dataset --lmda=2048 --model_dir=./models/CANF-VC/PSNR --action=test --GOP=32`
   * `compress`: `$ python3 test.py --Iframe=ANFIC --MENet=PWC --motion_coder_conf=./config/DVC_motion.yml --cond_motion_coder_conf=./config/CANF_motion_predprior.yml --residual_coder_conf=./config/CANF_inter_coder.yml --dataset=D --seq=BQSquare --seq_len=100 --dataset_path=./video_dataset --lmda=2048 --model_dir=./models/CANF-VC/PSNR --bitstream_dir=./bin --action=compress --GOP=32`
-  * `decompress`: `$ python3 test.py --Iframe=ANFIC --MENet=PWC --motion_coder_conf=./config/DVC_motion.yml --cond_motion_coder_conf=./config/CANF_motion_predprior.yml --residual_coder_conf=./config/CANF_inter_coder.yml --dataset=D --seq=BQSquare --seq_len=100 --dataset_path=./video_dataset --lmda=2048 --model_dir=./models/CANF-VC/PSNR --bitstream_dir=./bin --action=compress --GOP=32`
+  * `decompress`: `$ python3 test.py --Iframe=ANFIC --MENet=PWC --motion_coder_conf=./config/DVC_motion.yml --cond_motion_coder_conf=./config/CANF_motion_predprior.yml --residual_coder_conf=./config/CANF_inter_coder.yml --dataset=D --seq=BQSquare --seq_len=100 --dataset_path=./video_dataset --lmda=2048 --model_dir=./models/CANF-VC/PSNR --bitstream_dir=./bin --action=decompress --GOP=32`
+
+* CANF-VC* (PSNR): 
+  * `test`: `$ python3 test.py --Iframe=ANFIC --MENet=PWC --motion_coder_conf=./config/DVC_motion.yml --cond_motion_coder_conf=./config/CANF_motion_predprior.yml --residual_coder_conf=./config/CANF_inter_coder.yml --dataset=D --dataset_path=./video_dataset --lmda=2048 --model_dir=./models/CANF-VC_star/PSNR --action=test --GOP=32`
+  * `compress`: `$ python3 test.py --Iframe=BPG --MENet=PWC --motion_coder_conf=./config/DVC_motion.yml --cond_motion_coder_conf=./config/CANF_motion_predprior.yml --residual_coder_conf=./config/CANF_inter_coder.yml --dataset=D --seq=BQSquare --seq_len=100 --dataset_path=./video_dataset --lmda=2048 --model_dir=./models/CANF-VC_star/PSNR --bitstream_dir=./bin --action=compress --GOP=32`
+  * `decompress`: `$ python3 test.py --Iframe=BPG --MENet=PWC --motion_coder_conf=./config/DVC_motion.yml --cond_motion_coder_conf=./config/CANF_motion_predprior.yml --residual_coder_conf=./config/CANF_inter_coder.yml --dataset=D --seq=BQSquare --seq_len=100 --dataset_path=./video_dataset --lmda=2048 --model_dir=./models/CANF-VC_star/PSNR --bitstream_dir=./bin --action=decompress --GOP=32`
 
 ## Full Commands
 * CANF-VC: 
@@ -42,8 +47,6 @@
 * CANF-VC Lite:
   * `test`: `$ python test.py --Iframe=ANFIC --MENet=SPy --motion_coder_conf=./config/DVC_motion.yml --cond_motion_coder_conf=./config/CANF_motion_predprior_Lite.yml --residual_coder_conf=./config/CANF_inter_coder_Lite.yml --dataset={U/B/C/D/E/M} --dataset_path=/path/to/video_dataset --seq=SEQUENCE_TO_BE_COMPRESS(Optional) --seq_len=NUMBER_OF_FRAMES_TO_BE_COMPRESSED(Optional) --lmda={2048/1024/512/256} --model_dir=/path/to/CANF-VC-Lite/{PSNR/MS-SSIM} --action=test --GOP=32 {--msssim}`
   * `compress`/`decompress`: `$ python test.py --Iframe=ANFIC --MENet=SPy --motion_coder_conf=./config/DVC_motion.yml --cond_motion_coder_conf=./config/CANF_motion_predprior_Lite.yml --residual_coder_conf=./config/CANF_inter_coder_Lite.yml --dataset={U/B/C/D/E/M} --seq=SEQUENCE_TO_BE_COMPRESS(Optional) --seq_len=NUMBER_OF_FRAMES_TO_BE_COMPRESSED(Optional) --dataset_path=/path/to/video_dataset --lmda={2048/1024/512/256} --model_dir=/path/to/CANF-VC-Lite/{PSNR/MS-SSIM} --bitstream_dir=./bin --action={compress/decompress} --GOP=32 {--msssim}`
-  
-  
   
 ## Citation
 If you find this work useful for your research, please cite:
