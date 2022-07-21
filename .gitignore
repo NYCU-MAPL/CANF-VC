@@ -132,3 +132,4 @@ dmypy.json
 models/**
 video_dataset/**
 logs/**
+bin/**

@@ -98,21 +98,21 @@ class HyperPriorCoder(FactorizedCoder):
         if return_hat:
             stream, y_hat = ret
             x_hat = self.synthesis(y_hat)
-            return x_hat, [stream, side_stream], [hyperpriors.size()]
+            return x_hat, [stream, side_stream], [features.size(), hyperpriors.size()]
         else:
             stream = ret
-            return [stream, side_stream], [hyperpriors.size()]
+            return [stream, side_stream], [features.size(), hyperpriors.size()]
 
     def decompress(self, strings, shape):
         stream, side_stream = strings
-        z_shape = shape
+        y_shape, z_shape = shape
 
         z_hat = self.entropy_bottleneck.decompress(side_stream, z_shape)
 
         condition = self.hyper_synthesis(z_hat)
 
         y_hat = self.conditional_bottleneck.decompress(
-            stream, condition.size(), condition=condition)
+            stream, y_shape, condition=condition)
 
         reconstructed = self.synthesis(y_hat)
 
@@ -605,10 +605,10 @@ class CondAugmentedNormalizedFlowHyperPriorCoder(HyperPriorCoder):
             if self.use_QE:
                 x_hat = self.DQ(x_hat)
 
-            return x_hat, [stream, side_stream], [hyperpriors.size()]
+            return x_hat, [stream, side_stream], [features.size(), hyperpriors.size()]
         else:
             stream = ret
-            return [stream, side_stream], [hyperpriors.size()]
+            return [stream, side_stream], [features.size(), hyperpriors.size()]
 
     def decompress(self, strings, shapes, cond_coupling_input=None, reverse_input=None):
         if self.cond_coupling:
@@ -617,7 +617,7 @@ class CondAugmentedNormalizedFlowHyperPriorCoder(HyperPriorCoder):
         jac = None
 
         stream, side_stream = strings
-        y_shape, z_shape = shapes
+        y_shape, z_shape = shapes[0]
 
         z_hat = self.entropy_bottleneck.decompress(side_stream, z_shape)
 
@@ -768,10 +768,10 @@ class CondAugmentedNormalizedFlowHyperPriorCoderPredPrior(CondAugmentedNormalize
             if self.DQ is not None:
                 x_hat = self.DQ(x_hat)
 
-            return x_hat, [stream, side_stream], [hyperpriors.size()]
+            return x_hat, [stream, side_stream], [features.size(), hyperpriors.size()]
         else:
             stream = ret
-            return [stream, side_stream], [hyperpriors.size()]
+            return [stream, side_stream], [features.size(), hyperpriors.size()]
 
     def decompress(self, strings, shapes, cond_coupling_input=None, reverse_input=None, pred_prior_input=None):
         if self.cond_coupling:
