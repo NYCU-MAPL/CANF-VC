@@ -17,8 +17,5 @@ model_params:
     use_context: False
     condition: Gaussian
     quant_mode: noise
-    output_nought: False
-    cond_coupling: True
-    num_cond_frames: 1
     in_channels_tp: 3
     num_filters_tp: 72
