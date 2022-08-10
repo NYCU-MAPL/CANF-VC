@@ -74,36 +74,6 @@ def norm(input, mean=[.406, .456, .485], std=[.225, .224, .229]):
     return input.sub(input.new_tensor(mean).view(-1, 1, 1)).div(input.new_tensor(std).view(-1, 1, 1))
 
 
-class SPyNet0(nn.Module):
-    """SPyNet"""
-
-    def __init__(self, level=4, path='./models/spy_net-sintel-final.pytorch', trainable=False):
-        super(SPyNet0, self).__init__()
-        self.level = level
-        self.Blocks = nn.ModuleList([SPyBlock() for _ in range(level+1)])
-
-        if path is not None:
-            data = torch.load(path, map_location='cpu')
-            if 'state_dict' in data.keys():
-                self.load_state_dict(data['state_dict'])
-            else:
-                self.load_state_dict(data)
-
-        if not trainable:
-            self.requires_grad_(False)
-
-    def forward(self, im2, im1):  # backwarp
-        volume = [torch.cat([norm(im1), norm(im2)], dim=1)]  # B, 6, H, W
-        for _ in range(self.level):
-            volume.append(F.avg_pool2d(volume[-1], kernel_size=2))
-
-        flows = [torch.zeros_like(volume[-1][:, :2])]  # B, 2, H//16, W//16
-        for l, layer in enumerate(self.Blocks):
-            flows.append(layer(flows[-1], *volume[self.level-l].chunk(2, 1)))
-
-        return flows[-1]
-
-
 class PWCNet(PWCDCNet):
     """PWCNet rewrite"""
 
