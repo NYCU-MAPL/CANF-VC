@@ -485,17 +485,14 @@ class CANFHyperPriorCoder(HyperPriorCoder):
         self.__delattr__('synthesis')
 
         for i in range(num_layers):
-            if self.cond_coupling:
-                # Make encoding transform conditional
-                self.add_module('analysis'+str(i), AugmentedNormalizedAnalysisTransform(
-                    in_channels, num_features, num_filters[i], kernel_size, 
-                    use_affine=use_affine and init_code != 'zeros', distribution=init_code))
-                # Keep decoding transform unconditional
-                self.add_module('synthesis'+str(i), AugmentedNormalizedSynthesisTransform(
-                    in_channels, num_features, num_filters[i], kernel_size, 
-                    use_affine=use_affine and init_code != 'zeros', distribution=init_code))
-            else: 
-                raise NotImplementedError
+            # Make encoding transform conditional by concatenate
+            self.add_module('analysis'+str(i), AugmentedNormalizedAnalysisTransform(
+                in_channels*2, num_features, num_filters[i], kernel_size, 
+                use_affine=use_affine and init_code != 'zeros', distribution=init_code))
+            # Keep decoding transform unconditional
+            self.add_module('synthesis'+str(i), AugmentedNormalizedSynthesisTransform(
+                in_channels, num_features, num_filters[i], kernel_size, 
+                use_affine=use_affine and init_code != 'zeros', distribution=init_code))
 
         self.hyper_analysis = GoogleHyperAnalysisTransform(num_features, hyper_filters, num_hyperpriors) 
 
@@ -518,12 +515,9 @@ class CANFHyperPriorCoder(HyperPriorCoder):
     def encode(self, input, code=None, jac=None, xc=None):
         for i in range(self.num_layers):
             # Concat input with condition (MC frame)
-            if self.cond_coupling:
-                cond = xc
-                cond_input = torch.cat([input, cond], dim=1)
-                _, code, jac = self['analysis'+str(i)](cond_input, code, jac)
-            else:
-                _, code, jac = self['analysis'+str(i)](input, code, jac)
+            cond = xc
+            cond_input = torch.cat([input, cond], dim=1)
+            _, code, jac = self['analysis'+str(i)](cond_input, code, jac)
 
             if i < self.num_layers-1:
                 input, _, jac = self['synthesis'+str(i)](input, code, jac)
@@ -536,12 +530,9 @@ class CANFHyperPriorCoder(HyperPriorCoder):
 
             if i or jac is not None:
                 # Concat input with condition (MC frame)
-                if self.cond_coupling:
-                    cond = xc
-                    cond_input = torch.cat([input, cond], dim=1)
-                    _, code, jac = self['analysis'+str(i)](cond_input, code, jac, rev=True)
-                else:
-                    _, code, jac = self['analysis'+str(i)](input, code, jac, rev=True)
+                cond = xc
+                cond_input = torch.cat([input, cond], dim=1)
+                _, code, jac = self['analysis'+str(i)](cond_input, code, jac, rev=True)
 
         return input, code, jac
 
@@ -651,14 +642,13 @@ class CANFHyperPriorCoderWithTemporalPrior(CANFHyperPriorCoder):
     def __init__(self, in_channels_tp=3, num_filters_tp=None, **kwargs):
         super(CANFHyperPriorCoderWithTemporalPrior, self).__init__(**kwargs)
 
-        if num_filters_tp is None:  # When not specifying, it will align to num_filters
-            num_filters_tp = kwargs['num_filters']
+        assert not (num_filters_tp is None), ValueError
 
         if self.use_mean or "Mixture" in kwargs["condition"]:
-            self.temporal_prior = GoogleAnalysisTransform(in_channels_tp,
+            self.pred_prior = GoogleAnalysisTransform(in_channels_tp,
                                                       kwargs['num_features'] * self.conditional_bottleneck.condition_size,
-                                                      num_filters_tp,  # num_filters=64,
-                                                      kwargs['kernel_size'],  # kernel_size=3,
+                                                      num_filters_tp,
+                                                      kwargs['kernel_size'],
                                                      )
             self.PA = nn.Sequential(
                 nn.Conv2d((kwargs['num_features'] * self.conditional_bottleneck.condition_size) * 2, 640, 1),
@@ -668,10 +658,10 @@ class CANFHyperPriorCoderWithTemporalPrior(CANFHyperPriorCoder):
                 nn.Conv2d(640, kwargs['num_features'] * self.conditional_bottleneck.condition_size, 1)
             )
         else:
-            self.temporal_prior = GoogleAnalysisTransform(in_channels_tp,
+            self.pred_prior = GoogleAnalysisTransform(in_channels_tp,
                                                       kwargs['num_features'],
-                                                      num_filters_tp,  # num_filters=64,
-                                                      kwargs['kernel_size'],  # kernel_size=3,
+                                                      num_filters_tp,
+                                                      kwargs['kernel_size'],
                                                      )
             self.PA = nn.Sequential(
                 nn.Conv2d(kwargs['num_features'] * 2, 640, 1),
@@ -690,7 +680,7 @@ class CANFHyperPriorCoderWithTemporalPrior(CANFHyperPriorCoder):
         # z_tilde = hyper_code
 
         hp_feat = self.hyper_synthesis(z_tilde)
-        tp_feat = self.temporal_prior(temporal_cond)
+        tp_feat = self.pred_prior(temporal_cond)
 
         condition = self.PA(torch.cat([hp_feat, tp_feat], dim=1))
 
@@ -716,7 +706,7 @@ class CANFHyperPriorCoderWithTemporalPrior(CANFHyperPriorCoder):
             hyperpriors, return_sym=True)
 
         hp_feat = self.hyper_synthesis(z_hat)
-        tp_feat = self.temporal_prior(temporal_cond)
+        tp_feat = self.pred_prior(temporal_cond)
 
         condition = self.PA(torch.cat([hp_feat, tp_feat], dim=1))
 
@@ -752,7 +742,7 @@ class CANFHyperPriorCoderWithTemporalPrior(CANFHyperPriorCoder):
         z_hat = self.entropy_bottleneck.decompress(side_stream, z_shape)
 
         hp_feat = self.hyper_synthesis(z_hat)
-        tp_feat = self.temporal_prior(temporal_cond)
+        tp_feat = self.pred_prior(temporal_cond)
 
         condition = self.PA(torch.cat([hp_feat, tp_feat], dim=1))
 
