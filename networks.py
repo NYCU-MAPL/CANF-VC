@@ -463,28 +463,18 @@ class AugmentedNormalizedFlowHyperPriorCoder(HyperPriorCoder):
         return input, (y_likelihood, z_likelihood), Y_error
 
 
-class CondAugmentedNormalizedFlowHyperPriorCoder(HyperPriorCoder):
-    """CondAugmentedNormalizedFlowHyperPriorCoder"""
+class CANFHyperPriorCoder(HyperPriorCoder):
+    """CANFHyperPriorCoder"""
 
     def __init__(self, num_filters, num_features, num_hyperpriors,
                  in_channels=3, out_channels=3, kernel_size=5, num_layers=1, # Note: out_channels is useless
                  init_code='gaussian', use_QE=False, use_affine=False,
                  hyper_filters=192, use_mean=False, use_context=False,
-                 condition='Gaussian', quant_mode='noise',
-                 output_nought=True, # Set False when setting upper-left corner(x_2) as MC frame
-                 cond_coupling=False, #Set True when applying conditional affine transform
-                 num_cond_frames:int =1 # Set 1 when only MC frame is for condition ; >1 whwn multi-refertence frames as conditions
-                ):
-        super(CondAugmentedNormalizedFlowHyperPriorCoder, self).__init__(
+                 condition='Gaussian', quant_mode='noise'):
+        super(CANFHyperPriorCoder, self).__init__(
             num_features, num_hyperpriors, use_mean, False, use_context, condition, quant_mode)
         self.use_QE = use_QE
         self.num_layers = num_layers
-        self.output_nought=output_nought
-        self.cond_coupling = cond_coupling
-        assert num_cond_frames > 0, 'number of conditioning frames must >=1'
-
-        print('self.output_nought = ',self.output_nought)
-        print('self.cond_coupling = ',self.cond_coupling)
 
         if not isinstance(num_filters, list):
             num_filters = [num_filters]
@@ -498,7 +488,7 @@ class CondAugmentedNormalizedFlowHyperPriorCoder(HyperPriorCoder):
             if self.cond_coupling:
                 # Make encoding transform conditional
                 self.add_module('analysis'+str(i), AugmentedNormalizedAnalysisTransform(
-                    in_channels*(1+num_cond_frames), num_features, num_filters[i], kernel_size, 
+                    in_channels, num_features, num_filters[i], kernel_size, 
                     use_affine=use_affine and init_code != 'zeros', distribution=init_code))
                 # Keep decoding transform unconditional
                 self.add_module('synthesis'+str(i), AugmentedNormalizedSynthesisTransform(
@@ -525,11 +515,11 @@ class CondAugmentedNormalizedFlowHyperPriorCoder(HyperPriorCoder):
     def __getitem__(self, key):
         return self.__getattr__(key)
 
-    def encode(self, input, code=None, jac=None, cond_coupling_input=None):
+    def encode(self, input, code=None, jac=None, xc=None):
         for i in range(self.num_layers):
             # Concat input with condition (MC frame)
             if self.cond_coupling:
-                cond = cond_coupling_input
+                cond = xc
                 cond_input = torch.cat([input, cond], dim=1)
                 _, code, jac = self['analysis'+str(i)](cond_input, code, jac)
             else:
@@ -540,14 +530,14 @@ class CondAugmentedNormalizedFlowHyperPriorCoder(HyperPriorCoder):
 
         return input, code, jac
 
-    def decode(self, input, code=None, jac=None, cond_coupling_input=None):
+    def decode(self, input, code=None, jac=None, xc=None):
         for i in range(self.num_layers-1, -1, -1):
             input, _, jac = self['synthesis'+str(i)](input, code, jac, rev=True, last_layer=i == self.num_layers-1)
 
             if i or jac is not None:
                 # Concat input with condition (MC frame)
                 if self.cond_coupling:
-                    cond = cond_coupling_input
+                    cond = xc
                     cond_input = torch.cat([input, cond], dim=1)
                     _, code, jac = self['analysis'+str(i)](cond_input, code, jac, rev=True)
                 else:
@@ -569,14 +559,11 @@ class CondAugmentedNormalizedFlowHyperPriorCoder(HyperPriorCoder):
         
         return y_tilde, z_tilde, y_likelihood, z_likelihood
 
-    def compress(self, input, cond_coupling_input=None, reverse_input=None, return_hat=False):
-        if self.cond_coupling:
-            assert not (cond_coupling_input is None), "cond_coupling_input should be specified"
-        
+    def compress(self, input, xc=None, x2_back=None, return_hat=False):
         code = None
         jac = None
         input, features, jac = self.encode(
-            input, code, jac, cond_coupling_input=cond_coupling_input)
+            input, code, jac, xc=xc)
 
         hyperpriors = self.hyper_analysis(
             features.abs() if self.use_abs else features)
@@ -594,14 +581,10 @@ class CondAugmentedNormalizedFlowHyperPriorCoder(HyperPriorCoder):
             stream, y_hat = ret
 
             # Decode
-            if not self.output_nought:
-                assert not (reverse_input is None), "reverse_input should be specified"
-                input = reverse_input
-            else:
-                input = torch.zeros_like(input)
+            input = x2_back
                 
             x_hat, code, jac = self.decode(
-                input, y_hat, jac, cond_coupling_input=cond_coupling_input)
+                input, y_hat, jac, xc=xc)
             if self.use_QE:
                 x_hat = self.DQ(x_hat)
 
@@ -610,9 +593,9 @@ class CondAugmentedNormalizedFlowHyperPriorCoder(HyperPriorCoder):
             stream = ret
             return [stream, side_stream], [features.size(), hyperpriors.size()]
 
-    def decompress(self, strings, shapes, cond_coupling_input=None, reverse_input=None):
+    def decompress(self, strings, shapes, xc=None, x2_back=None):
         if self.cond_coupling:
-            assert not (cond_coupling_input is None), "cond_coupling_input should be specified"
+            assert not (xc is None), "xc should be specified"
         
         jac = None
 
@@ -627,45 +610,35 @@ class CondAugmentedNormalizedFlowHyperPriorCoder(HyperPriorCoder):
             stream, y_shape, condition=condition)
         
         # Decode
-        if not self.output_nought:
-            assert not (reverse_input is None), "reverse_input should be specified"
-            input = reverse_input
-        else:
-            input = torch.zeros_like(input)
+        input = x2_back
 
         x_hat, code, jac = self.decode(
-            input, y_hat, jac, cond_coupling_input=cond_coupling_input)
+            input, y_hat, jac, xc=xc)
 
         if self.use_QE:
             reconstructed = self.DQ(x_hat)
 
         return reconstructed
 
-    def forward(self, input, code=None, jac=None,
-                output=None, # Should assign value when self.output_nought==False
-                cond_coupling_input=None # Should assign value when self.cond_coupling==True
-                                         # When using ANFIC on residual coding, output & cond_coupling_input should both be MC frame
-               ):
-        if not self.output_nought:
-            assert not (output is None), "output should be specified"
-        if self.cond_coupling:
-            assert not (cond_coupling_input is None), "cond_coupling_input should be specified"
+    def forward(self, input, code=None, jac=None, x2_back=None, xc=None):
+        assert not (x2_back is None), ValueError
+        assert not (xc is None), ValueError
 
         # Encode
         jac = [] if jac else None
-        input, code, jac = self.encode(input, code, jac, cond_coupling_input=cond_coupling_input)
+        input, code, jac = self.encode(input, code, jac, xc=xc)
 
         # Entropy model
         y_tilde, z_tilde, y_likelihood, z_likelihood = self.entropy_model(input, code)
 
         # Encode distortion (last synthesis transform)
         x_2, _, jac = self['synthesis'+str(self.num_layers-1)](input, y_tilde, jac, last_layer=True, layer=self.num_layers-1)
-
-        #input, code, hyper_code = x_2, y_tilde, z_tilde # x_2 directly backward
-        input, code, hyper_code = output, y_tilde, z_tilde # Correct setting ; MC frame as x_2 when decoding
+        
+        # Prepare input for reverse
+        input, code, hyper_code = x2_back, y_tilde, z_tilde
 
         # Decode
-        input, code, jac = self.decode(input, code, jac, cond_coupling_input=cond_coupling_input)
+        input, code, jac = self.decode(input, code, jac, xc=xc)
 
         if self.use_QE:       
             BDQ = input
@@ -674,17 +647,17 @@ class CondAugmentedNormalizedFlowHyperPriorCoder(HyperPriorCoder):
         return input, (y_likelihood, z_likelihood), x_2
 
 
-class CondAugmentedNormalizedFlowHyperPriorCoderPredPrior(CondAugmentedNormalizedFlowHyperPriorCoder):
-    def __init__(self, in_channels_predprior=3, num_predprior_filters=None, **kwargs):
-        super(CondAugmentedNormalizedFlowHyperPriorCoderPredPrior, self).__init__(**kwargs)
+class CANFHyperPriorCoderWithTemporalPrior(CANFHyperPriorCoder):
+    def __init__(self, in_channels_tp=3, num_filters_tp=None, **kwargs):
+        super(CANFHyperPriorCoderWithTemporalPrior, self).__init__(**kwargs)
 
-        if num_predprior_filters is None:  # When not specifying, it will align to num_filters
-            num_predprior_filters = kwargs['num_filters']
+        if num_filters_tp is None:  # When not specifying, it will align to num_filters
+            num_filters_tp = kwargs['num_filters']
 
         if self.use_mean or "Mixture" in kwargs["condition"]:
-            self.pred_prior = GoogleAnalysisTransform(in_channels_predprior,
+            self.temporal_prior = GoogleAnalysisTransform(in_channels_tp,
                                                       kwargs['num_features'] * self.conditional_bottleneck.condition_size,
-                                                      num_predprior_filters,  # num_filters=64,
+                                                      num_filters_tp,  # num_filters=64,
                                                       kwargs['kernel_size'],  # kernel_size=3,
                                                      )
             self.PA = nn.Sequential(
@@ -695,9 +668,9 @@ class CondAugmentedNormalizedFlowHyperPriorCoderPredPrior(CondAugmentedNormalize
                 nn.Conv2d(640, kwargs['num_features'] * self.conditional_bottleneck.condition_size, 1)
             )
         else:
-            self.pred_prior = GoogleAnalysisTransform(in_channels_predprior,
+            self.temporal_prior = GoogleAnalysisTransform(in_channels_tp,
                                                       kwargs['num_features'],
-                                                      num_predprior_filters,  # num_filters=64,
+                                                      num_filters_tp,  # num_filters=64,
                                                       kwargs['kernel_size'],  # kernel_size=3,
                                                      )
             self.PA = nn.Sequential(
@@ -708,7 +681,7 @@ class CondAugmentedNormalizedFlowHyperPriorCoderPredPrior(CondAugmentedNormalize
                 nn.Conv2d(640, kwargs['num_features'], 1)
             )
     
-    def entropy_model(self, input, code, pred_prior_input):
+    def entropy_model(self, input, code, temporal_cond):
         # Enrtopy coding
         hyper_code = self.hyper_analysis(
             code.abs() if self.use_abs else code)
@@ -717,9 +690,9 @@ class CondAugmentedNormalizedFlowHyperPriorCoderPredPrior(CondAugmentedNormalize
         # z_tilde = hyper_code
 
         hp_feat = self.hyper_synthesis(z_tilde)
-        pred_feat = self.pred_prior(pred_prior_input)
+        tp_feat = self.temporal_prior(temporal_cond)
 
-        condition = self.PA(torch.cat([hp_feat, pred_feat], dim=1))
+        condition = self.PA(torch.cat([hp_feat, tp_feat], dim=1))
 
         y_tilde, y_likelihood = self.conditional_bottleneck(code, condition=condition)
 
@@ -727,16 +700,14 @@ class CondAugmentedNormalizedFlowHyperPriorCoderPredPrior(CondAugmentedNormalize
 
         return y_tilde, z_tilde, y_likelihood, z_likelihood
 
-    def compress(self, input, cond_coupling_input=None, reverse_input=None, pred_prior_input=None, return_hat=False):
-        if self.cond_coupling:
-            assert not (cond_coupling_input is None), "cond_coupling_input should be specified"
-        if pred_prior_input is None:
-            pred_prior_input = cond_coupling_input
+    def compress(self, input, xc=None, x2_back=None, temporal_cond=None, return_hat=False):
+        assert not (xc is None), ValueError
+        assert not (temporal_cond is None), ValueError
         
         code = None
         jac = None
         input, features, jac = self.encode(
-            input, code, jac, cond_coupling_input=cond_coupling_input)
+            input, code, jac, xc=xc)
 
         hyperpriors = self.hyper_analysis(
             features.abs() if self.use_abs else features)
@@ -745,9 +716,9 @@ class CondAugmentedNormalizedFlowHyperPriorCoderPredPrior(CondAugmentedNormalize
             hyperpriors, return_sym=True)
 
         hp_feat = self.hyper_synthesis(z_hat)
-        pred_feat = self.pred_prior(pred_prior_input)
+        tp_feat = self.temporal_prior(temporal_cond)
 
-        condition = self.PA(torch.cat([hp_feat, pred_feat], dim=1))
+        condition = self.PA(torch.cat([hp_feat, tp_feat], dim=1))
 
         ret = self.conditional_bottleneck.compress(
             features, condition=condition, return_sym=return_hat)
@@ -757,14 +728,10 @@ class CondAugmentedNormalizedFlowHyperPriorCoderPredPrior(CondAugmentedNormalize
             stream, y_hat = ret
 
             # Decode
-            if not self.output_nought:
-                assert not (reverse_input is None), "reverse_input should be specified"
-                input = reverse_input
-            else:
-                input = torch.zeros_like(input)
+            input = x2_back
                 
-            x_hat, code, jac = self.decode(
-                input, y_hat, jac, cond_coupling_input=cond_coupling_input)
+            x_hat, code, jac = self.decode(input, y_hat, jac, xc=xc)
+
             if self.DQ is not None:
                 x_hat = self.DQ(x_hat)
 
@@ -773,11 +740,9 @@ class CondAugmentedNormalizedFlowHyperPriorCoderPredPrior(CondAugmentedNormalize
             stream = ret
             return [stream, side_stream], [features.size(), hyperpriors.size()]
 
-    def decompress(self, strings, shapes, cond_coupling_input=None, reverse_input=None, pred_prior_input=None):
-        if self.cond_coupling:
-            assert not (cond_coupling_input is None), "cond_coupling_input should be specified"
-        if pred_prior_input is None:
-            pred_prior_input = cond_coupling_input
+    def decompress(self, strings, shapes, xc=None, x2_back=None, temporal_cond=None):
+        assert not (xc is None), ValueError
+        assert not (temporal_cond is None), ValueError
         
         jac = None
 
@@ -787,56 +752,46 @@ class CondAugmentedNormalizedFlowHyperPriorCoderPredPrior(CondAugmentedNormalize
         z_hat = self.entropy_bottleneck.decompress(side_stream, z_shape)
 
         hp_feat = self.hyper_synthesis(z_hat)
-        pred_feat = self.pred_prior(pred_prior_input)
+        tp_feat = self.temporal_prior(temporal_cond)
 
-        condition = self.PA(torch.cat([hp_feat, pred_feat], dim=1))
+        condition = self.PA(torch.cat([hp_feat, tp_feat], dim=1))
 
         y_hat = self.conditional_bottleneck.decompress(
             stream, y_shape, condition=condition)
         
         # Decode
-        if not self.output_nought:
-            assert not (reverse_input is None), "reverse_input should be specified"
-            input = reverse_input
-        else:
-            input = torch.zeros_like(input)
+        input = x2_back
 
         x_hat, code, jac = self.decode(
-            input, y_hat, jac, cond_coupling_input=cond_coupling_input)
+            input, y_hat, jac, xc=xc)
 
         if self.use_QE:
             reconstructed = self.DQ(x_hat)
 
         return reconstructed
 
-    def forward(self, input, code=None, jac=None,
-                output=None, # Should assign value when self.output_nought==False
-                cond_coupling_input=None, # Should assign value when self.cond_coupling==True
-                                         # When using ANFIC on residual coding, output & cond_coupling_input should both be MC frame
-                pred_prior_input=None  # cond_coupling_input will replace this when None
-               ):
-        if not self.output_nought:
-            assert not (output is None), "output should be specified"
-        if self.cond_coupling:
-            assert not (cond_coupling_input is None), "cond_coupling_input should be specified"
-        if pred_prior_input is None:
-            pred_prior_input = cond_coupling_input
+    def forward(self, input, code=None, jac=None, x2_back=None, xc=None, temporal_cond=None):
+
+        assert not (x2_back is None), ValueError
+        assert not (xc is None), ValueError
+        assert not (temporal_cond is None), ValueError
 
         # Encode
         jac = [] if jac else None
         input, code, jac = self.encode(
-            input, code, jac, cond_coupling_input=cond_coupling_input)
+            input, code, jac, xc=xc)
 
         # Enrtopy coding
-        y_tilde, z_tilde, y_likelihood, z_likelihood = self.entropy_model(input, code, pred_prior_input)
+        y_tilde, z_tilde, y_likelihood, z_likelihood = self.entropy_model(input, code, temporal_cond)
         
         # Encode distortion
         x_2, _, jac = self['synthesis' + str(self.num_layers - 1)](input, y_tilde, jac, last_layer=True)
 
-        input, code, hyper_code = output, y_tilde, z_tilde  # MC frame as x_2 when decoding
+        # Prepare input for reverse
+        input, code, hyper_code = x2_back, y_tilde, z_tilde 
 
         # Decode
-        input, code, jac = self.decode(input, code, jac, cond_coupling_input=cond_coupling_input)
+        input, code, jac = self.decode(input, code, jac, xc=xc)
 
         if self.use_QE:
             BDQ = input
@@ -848,6 +803,6 @@ class CondAugmentedNormalizedFlowHyperPriorCoderPredPrior(CondAugmentedNormalize
 __CODER_TYPES__ = {
                    "GoogleHyperPriorCoder": GoogleHyperPriorCoder,
                    "ANFHyperPriorCoder": AugmentedNormalizedFlowHyperPriorCoder,
-                   "CondANFHyperPriorCoder": CondAugmentedNormalizedFlowHyperPriorCoder,
-                   "CondANFHyperPriorCoderPredPrior": CondAugmentedNormalizedFlowHyperPriorCoderPredPrior,
+                   "CANFHyperPriorCoder": CANFHyperPriorCoder,
+                   "CANFHyperPriorCoderWithTemporalPrior": CANFHyperPriorCoderWithTemporalPrior,
                   }

@@ -23,7 +23,6 @@ from util.sampler import Resampler
 from util.ssim import MS_SSIM
 from utils import Alignment, BitStreamIO
 
-
 DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 class CompressModel(nn.Module):
@@ -107,9 +106,7 @@ class Pframe(CompressModel):
             flow = self.MENet(ref_frame, coding_frame)
             
             # Encode motion condioning on extrapolated motion
-            flow_hat, likelihood_m, _, = self.CondMotion(flow, output=pred_flow, 
-                                                                 cond_coupling_input=pred_flow, 
-                                                                 pred_prior_input=pred_frame)
+            flow_hat, likelihood_m, _, = self.CondMotion(flow, x2_back=pred_flow,xc=pred_flow, temporal_cond=pred_frame)
 
         # No motion extrapolation is performed for first P frame
         else: 
@@ -127,7 +124,7 @@ class Pframe(CompressModel):
     def forward(self, ref_frame, coding_frame, p_order=1):
         mc_frame, likelihood_m = self.motion_forward(ref_frame, coding_frame, p_order)
 
-        reconstructed, likelihood_r, _ = self.Residual(coding_frame, output=mc_frame, cond_coupling_input=mc_frame)
+        reconstructed, likelihood_r, _ = self.Residual(coding_frame, x2_back=mc_frame, xc=mc_frame, temporal_cond=mc_frame)
 
         likelihoods = likelihood_m + likelihood_r
         
@@ -192,7 +189,6 @@ class Pframe(CompressModel):
 
             # P-frame
             if frame_idx != 0:
-
                 if TO_COMPRESS:
                     if frame_idx == 1:
                         self.frame_buffer = [align.align(ref_frame)]
@@ -501,9 +497,7 @@ class Pframe(CompressModel):
             flow = self.MENet(ref_frame, coding_frame)
             
             # Encode motion condioning on extrapolated motion
-            flow_hat, mv_strings, mv_shape = self.CondMotion.compress(flow, reverse_input=pred_flow,
-                                                                      cond_coupling_input=pred_flow, 
-                                                                      pred_prior_input=pred_frame, 
+            flow_hat, mv_strings, mv_shape = self.CondMotion.compress(flow, x2_back=pred_flow,xc=pred_flow, temporal_cond=pred_frame, 
                                                                       return_hat=True)
 
         # No motion extrapolation is performed for first P frame
@@ -517,10 +511,7 @@ class Pframe(CompressModel):
 
         self.MWNet.append_flow(flow_hat)
 
-        reconstructed, res_strings, res_shape = self.Residual.compress(coding_frame, 
-                                                                       reverse_input=mc_frame, 
-                                                                       cond_coupling_input=mc_frame, 
-                                                                       return_hat=True)
+        reconstructed, res_strings, res_shape = self.Residual.compress(coding_frame, x2_back=mc_frame, xc=mc_frame, temporal_cond=mc_frame, return_hat=True)
 
         strings, shapes = mv_strings + res_strings, mv_shape + res_shape
 
@@ -545,9 +536,7 @@ class Pframe(CompressModel):
             
             # Decode motion condioning on extrapolated motion
             flow_hat = self.CondMotion.decompress(mv_strings, mv_shape, 
-                                                  reverse_input=pred_flow,
-                                                  cond_coupling_input=pred_flow, 
-                                                  pred_prior_input=pred_frame)
+                                                  x2_back=pred_flow,xc=pred_flow, temporal_cond=pred_frame)
 
         # No motion extrapolation is performed for first P frame
         else: 
@@ -561,8 +550,7 @@ class Pframe(CompressModel):
 
         res_strings, res_shape = strings[2:], shapes[2:]
         reconstructed = self.Residual.decompress(res_strings, res_shape,
-                                                 reverse_input=mc_frame, 
-                                                 cond_coupling_input=mc_frame)
+                                                 x2_back=mc_frame, xc=mc_frame, temporal_cond=mc_frame)
         return reconstructed
 
     def setup(self):
