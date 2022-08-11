@@ -21,7 +21,7 @@ from models import Refinement
 from util.psnr import mse2psnr
 from util.sampler import Resampler
 from util.ssim import MS_SSIM
-from utils import Alignment, BitStreamIO
+from util.tools import Alignment, BitStreamIO
 
 DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
