@@ -13,6 +13,7 @@ from torch.utils.data import DataLoader
 from entropy_models import EntropyBottleneck, estimate_bpp
 from networks import __CODER_TYPES__, AugmentedNormalizedFlowHyperPriorCoder
 from torchvision import transforms
+from torchvision.utils import save_image
 
 from dataloader import VideoTestData, VideoTestSequence, BitstreamData, BitstreamSequence
 from flownets import PWCNet, SPyNet
@@ -407,6 +408,9 @@ class Pframe(CompressModel):
         # Clear motion buffer & frame buffer
         self.MWNet.clear_buffer()
         self.frame_buffer = list()
+        
+        save_dir = self.args.logs_dir + f'/reconstructed/{seq_name}/'
+        os.makedirs(save_dir, exist_ok=True)
 
         for frame_idx in range(gop_size):
             # P-frame
@@ -467,8 +471,11 @@ class Pframe(CompressModel):
                 metrics['Rate'].append(rate)
 
                 log_list.append({'Rate': rate})
+            
+            # Store reconstructed frame
+            save_image(rec_frame[0], os.path.join(save_dir, f'frame_{int(frame_id_start + frame_idx)}.png'))
 
-            # Make reconstruction as next reference frame
+            # Make reconstructed frame as next reference frame
             ref_frame = rec_frame
 
         for m in metrics_name:
