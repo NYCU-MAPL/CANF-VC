@@ -13,6 +13,7 @@ from torch.utils.data import DataLoader
 from entropy_models import EntropyBottleneck, estimate_bpp
 from networks import __CODER_TYPES__, AugmentedNormalizedFlowHyperPriorCoder
 from torchvision import transforms
+from torchvision.utils import save_image
 
 from dataloader import VideoTestData, VideoTestSequence, BitstreamData, BitstreamSequence
 from flownets import PWCNet, SPyNet
@@ -21,7 +22,7 @@ from models import Refinement
 from util.psnr import mse2psnr
 from util.sampler import Resampler
 from util.ssim import MS_SSIM
-from utils import Alignment, BitStreamIO
+from util.tools import Alignment, BitStreamIO
 
 DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -106,7 +107,7 @@ class Pframe(CompressModel):
             flow = self.MENet(ref_frame, coding_frame)
             
             # Encode motion condioning on extrapolated motion
-            flow_hat, likelihood_m, _, = self.CondMotion(flow, x2_back=pred_flow,xc=pred_flow, temporal_cond=pred_frame)
+            flow_hat, likelihood_m, _, _ = self.CondMotion(flow, xc=pred_flow, x2_back=pred_flow, temporal_cond=pred_frame)
 
         # No motion extrapolation is performed for first P frame
         else: 
@@ -124,7 +125,7 @@ class Pframe(CompressModel):
     def forward(self, ref_frame, coding_frame, p_order=1):
         mc_frame, likelihood_m = self.motion_forward(ref_frame, coding_frame, p_order)
 
-        reconstructed, likelihood_r, _ = self.Residual(coding_frame, x2_back=mc_frame, xc=mc_frame, temporal_cond=mc_frame)
+        reconstructed, likelihood_r, _, _ = self.Residual(coding_frame, xc=mc_frame, x2_back=mc_frame, temporal_cond=mc_frame)
 
         likelihoods = likelihood_m + likelihood_r
         
@@ -407,6 +408,9 @@ class Pframe(CompressModel):
         # Clear motion buffer & frame buffer
         self.MWNet.clear_buffer()
         self.frame_buffer = list()
+        
+        save_dir = self.args.logs_dir + f'/reconstructed/{seq_name}/'
+        os.makedirs(save_dir, exist_ok=True)
 
         for frame_idx in range(gop_size):
             # P-frame
@@ -467,8 +471,11 @@ class Pframe(CompressModel):
                 metrics['Rate'].append(rate)
 
                 log_list.append({'Rate': rate})
+            
+            # Store reconstructed frame
+            save_image(rec_frame[0], os.path.join(save_dir, f'frame_{int(frame_id_start + frame_idx)}.png'))
 
-            # Make reconstruction as next reference frame
+            # Make reconstructed frame as next reference frame
             ref_frame = rec_frame
 
         for m in metrics_name:
