@@ -106,7 +106,7 @@ class Pframe(CompressModel):
             flow = self.MENet(ref_frame, coding_frame)
             
             # Encode motion condioning on extrapolated motion
-            flow_hat, likelihood_m, _, = self.CondMotion(flow, xc=pred_flow, x2_back=pred_flow, temporal_cond=pred_frame)
+            flow_hat, likelihood_m, _, _ = self.CondMotion(flow, xc=pred_flow, x2_back=pred_flow, temporal_cond=pred_frame)
 
         # No motion extrapolation is performed for first P frame
         else: 
@@ -124,7 +124,7 @@ class Pframe(CompressModel):
     def forward(self, ref_frame, coding_frame, p_order=1):
         mc_frame, likelihood_m = self.motion_forward(ref_frame, coding_frame, p_order)
 
-        reconstructed, likelihood_r, _ = self.Residual(coding_frame, xc=mc_frame, x2_back=mc_frame, temporal_cond=mc_frame)
+        reconstructed, likelihood_r, _, _ = self.Residual(coding_frame, xc=mc_frame, x2_back=mc_frame, temporal_cond=mc_frame)
 
         likelihoods = likelihood_m + likelihood_r
         

@@ -635,7 +635,7 @@ class CANFHyperPriorCoder(HyperPriorCoder):
             BDQ = input
             input = self.DQ(input)
 
-        return input, (y_likelihood, z_likelihood), x_2
+        return input, (y_likelihood, z_likelihood), x_2, BDQ
 
 
 class CANFHyperPriorCoderWithTemporalPrior(CANFHyperPriorCoder):
@@ -787,7 +787,7 @@ class CANFHyperPriorCoderWithTemporalPrior(CANFHyperPriorCoder):
             BDQ = input
             input = self.DQ(input)
 
-        return input, (y_likelihood, z_likelihood), x_2
+        return input, (y_likelihood, z_likelihood), x_2, BDQ
 
 
 __CODER_TYPES__ = {
