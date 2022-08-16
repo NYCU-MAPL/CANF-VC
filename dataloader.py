@@ -11,10 +11,10 @@ from torch.utils.data import DataLoader
 from torchvision import transforms
 from subprocess import Popen, PIPE
 
-from util.vision import imgloader, rgb_transform
+from CANF_VC.util.vision import imgloader, rgb_transform
 from PIL import Image
 
-libbpg_path = "/home/mapl119/libbpg/" # Put your libbpg path here
+libbpg_path = os.getenv('BPG') # Put your libbpg path here
 
 class VideoTestSequence(torchData):
     def __init__(self, root, lmda, dataset='U', sequence='Beauty', seq_len=600, GOP=12):

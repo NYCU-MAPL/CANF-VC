@@ -10,19 +10,19 @@ import torch
 from tqdm import tqdm
 from torch import nn, optim
 from torch.utils.data import DataLoader
-from entropy_models import EntropyBottleneck, estimate_bpp
-from networks import __CODER_TYPES__, AugmentedNormalizedFlowHyperPriorCoder
 from torchvision import transforms
 from torchvision.utils import save_image
 
 from dataloader import VideoTestData, VideoTestSequence, BitstreamData, BitstreamSequence
-from flownets import PWCNet, SPyNet
-from SDCNet import MotionExtrapolationNet
-from models import Refinement
-from util.psnr import mse2psnr
-from util.sampler import Resampler
-from util.ssim import MS_SSIM
-from util.tools import Alignment, BitStreamIO
+from CANF_VC.entropy_models import EntropyBottleneck, estimate_bpp
+from CANF_VC.networks import __CODER_TYPES__, AugmentedNormalizedFlowHyperPriorCoder
+from CANF_VC.flownets import PWCNet, SPyNet
+from CANF_VC.SDCNet import MotionExtrapolationNet
+from CANF_VC.models import Refinement
+from CANF_VC.util.psnr import mse2psnr
+from CANF_VC.util.sampler import Resampler
+from CANF_VC.util.ssim import MS_SSIM
+from CANF_VC.util.tools import Alignment, BitStreamIO
 
 DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -123,6 +123,9 @@ class Pframe(CompressModel):
         return mc_frame, likelihood_m
 
     def forward(self, ref_frame, coding_frame, p_order=1):
+        if p_order == 1:
+            self.frame_buffer = [align.align(ref_frame)]
+        
         mc_frame, likelihood_m = self.motion_forward(ref_frame, coding_frame, p_order)
 
         reconstructed, likelihood_r, _, _ = self.Residual(coding_frame, xc=mc_frame, x2_back=mc_frame, temporal_cond=mc_frame)
@@ -130,6 +133,13 @@ class Pframe(CompressModel):
         likelihoods = likelihood_m + likelihood_r
         
         reconstructed = reconstructed.clamp(0, 1)
+
+        # Update frame buffer
+        self.frame_buffer.append(reconstructed)
+        if len(self.frame_buffer) == 4:
+            self.frame_buffer.pop(0)
+            assert len(self.frame_buffer) == 3, str(len(self.frame_buffer))
+    
         return reconstructed, likelihoods
     
     @torch.no_grad()
@@ -184,20 +194,15 @@ class Pframe(CompressModel):
             os.makedirs(file_pth, exist_ok=True)
 
         for frame_idx in range(gop_size):
-
             ref_frame = ref_frame.clamp(0, 1)
             coding_frame = batch[:, frame_idx].to(DEVICE)
 
             # P-frame
             if frame_idx != 0:
                 if TO_COMPRESS:
-                    if frame_idx == 1:
-                        self.frame_buffer = [align.align(ref_frame)]
-                    
                     file_name = os.path.join(file_pth, f'{int(frame_id_start+frame_idx)}.bin')
                     rec_frame, streams, shapes = self.compress(align.align(ref_frame), align.align(coding_frame), frame_idx)
                     rec_frame = rec_frame.clamp(0, 1)
-                    self.frame_buffer.append(rec_frame)
                     
                     with BitStreamIO(file_name, 'w') as fp:
                         fp.write(streams, [coding_frame.size()]+shapes)
@@ -219,9 +224,6 @@ class Pframe(CompressModel):
                     metrics['Rate'].append(rate)
 
                 else:
-                    if frame_idx == 1:
-                        self.frame_buffer = [align.align(ref_frame)]
-                    
                     rec_frame, likelihoods = self(align.align(ref_frame), align.align(coding_frame), frame_idx)
 
                     rec_frame = rec_frame.clamp(0, 1)
@@ -252,11 +254,6 @@ class Pframe(CompressModel):
                                      'ry': estimate_bpp(likelihoods[2], input=coding_frame).item(),
                                      'rz': estimate_bpp(likelihoods[3], input=coding_frame).item()})
 
-                # Update frame buffer
-                if len(self.frame_buffer) == 4:
-                    self.frame_buffer.pop(0)
-                    assert len(self.frame_buffer) == 3, str(len(self.frame_buffer))
-            
             # I-frame
             else:
                 if TO_COMPRESS and self.args.Iframe == 'ANFIC':
@@ -417,9 +414,6 @@ class Pframe(CompressModel):
             if frame_idx != 0:
                 ref_frame = ref_frame.clamp(0, 1)
 
-                if frame_idx == 1:
-                    self.frame_buffer = [align.align(ref_frame)]
-                
                 file_name = batch[frame_idx][0]
 
                 with BitStreamIO(file_name, 'r') as fp:
@@ -431,6 +425,7 @@ class Pframe(CompressModel):
                 rec_frame = align.resume(rec_frame, shape=shape_list[0])
 
                 height, width = shape_list[0][2:]
+
                 # Read the binary files directly for accurate bpp estimate.
                 size_byte = os.path.getsize(file_name)
                 rate = size_byte * 8 / height / width
@@ -439,11 +434,6 @@ class Pframe(CompressModel):
 
                 log_list.append({'Rate': rate})
 
-                # Update frame buffer
-                if len(self.frame_buffer) == 4:
-                    self.frame_buffer.pop(0)
-                    assert len(self.frame_buffer) == 3, str(len(self.frame_buffer))
-            
             # I-frame
             else:
                 if self.args.Iframe == 'ANFIC':
@@ -600,8 +590,6 @@ if __name__ == '__main__':
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
     torch.backends.cudnn.deterministic = True
-
-    save_root = os.getenv('LOG', './') + 'torchDVC/'
 
     parser = argparse.ArgumentParser(add_help=True)
 

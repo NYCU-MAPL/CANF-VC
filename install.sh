@@ -1,4 +1,3 @@
-pip3 install -r requirements.txt
-cd torchac/
-python3 setup.py install
+cd CANF_VC
+bash install.sh
 cd ../
