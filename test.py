@@ -10,19 +10,19 @@ import torch
 from tqdm import tqdm
 from torch import nn, optim
 from torch.utils.data import DataLoader
-from entropy_models import EntropyBottleneck, estimate_bpp
-from networks import __CODER_TYPES__, AugmentedNormalizedFlowHyperPriorCoder
 from torchvision import transforms
 from torchvision.utils import save_image
 
 from dataloader import VideoTestData, VideoTestSequence, BitstreamData, BitstreamSequence
-from flownets import PWCNet, SPyNet
-from SDCNet import MotionExtrapolationNet
-from models import Refinement
-from util.psnr import mse2psnr
-from util.sampler import Resampler
-from util.ssim import MS_SSIM
-from util.tools import Alignment, BitStreamIO
+from CANF_VC.entropy_models import EntropyBottleneck, estimate_bpp
+from CANF_VC.networks import __CODER_TYPES__, AugmentedNormalizedFlowHyperPriorCoder
+from CANF_VC.flownets import PWCNet, SPyNet
+from CANF_VC.SDCNet import MotionExtrapolationNet
+from CANF_VC.models import Refinement
+from CANF_VC.util.psnr import mse2psnr
+from CANF_VC.util.sampler import Resampler
+from CANF_VC.util.ssim import MS_SSIM
+from CANF_VC.util.tools import Alignment, BitStreamIO
 
 DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -590,8 +590,6 @@ if __name__ == '__main__':
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
     torch.backends.cudnn.deterministic = True
-
-    save_root = os.getenv('LOG', './') + 'torchDVC/'
 
     parser = argparse.ArgumentParser(add_help=True)
 
