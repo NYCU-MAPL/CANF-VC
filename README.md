@@ -13,7 +13,7 @@
 ## Project Installation
 1. Prepare PyTorch 1.4.0 environment and correspond torchvision
 2. Run `sh install.sh`
-3. Install `libbpg`: https://github.com/mirrorer/libbpg
+3. (Only needed for CANF-VC*) Install `libbpg`: https://github.com/mirrorer/libbpg
   3.1 Configure path to `libbpg` as `libbpg_path` in `dataloader.py`
 4. Download model weights & prepare testing data
 5. Start evaluation: `action=test/compress/decompress`
