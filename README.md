@@ -1,14 +1,14 @@
 # CANF-VC: Conditional Augmented Normalizing Flows for Video Compression
 
 ## \*\*\*Update (08.30.22)\*\*\*: CANF-VC with Error Propagation Aware Training Strategy
-* We report a better CANF-VC performer, which applies a popular Error Propagation Aware (EPA) training strategy from [Gou *et al.*, ECCV'20](https://www.ecva.net/papers/eccv_2020/papers_ECCV/papers/123470443.pdf). The network architecture is THE SAME as our original CANF-VC, with one more training step that enable all gradients when updating within a GOP.
-* Usage: Exactly the same to CANf-VC
+* We report a better CANF-VC performer, which applies a popular Error Propagation Aware (EPA) training strategy from [Gou *et al.*, ECCV'20](https://www.ecva.net/papers/eccv_2020/papers_ECCV/papers/123470443.pdf). The network architecture is THE SAME as original CANF-VC, only with one more training step that enable all gradients when updating within a GOP.
+* Usage: Exactly the same to [CANF-VC](https://github.com/NYCU-MAPL/CANF-VC/blob/main/README.md#full-commands)
 * Download from https://drive.google.com/drive/folders/14WUDwRgNhx2S36KfyvlG3MW10W2VMwqv?usp=sharing
 * Performance
   * BD-rate (GOP=32 ; anchor: x265 veryslow)
     * ![image](https://user-images.githubusercontent.com/108980934/187421591-6b4acce8-1cf8-4a64-a590-c2ea844b2a2f.png)
-  * R-D curve (UVG dataset): ![image](https://user-images.githubusercontent.com/108980934/187422449-9b5df347-635f-4d68-9d22-43c59aa0094e.png)
-  * R-D curve (HEVC class B dataset): ![image](https://user-images.githubusercontent.com/108980934/187422478-0bbc398c-90f5-46d3-ad39-f85df1fb6a06.png)
+  * R-D curve (UVG dataset): ![image](https://user-images.githubusercontent.com/108980934/187449482-a9fad0fe-2506-47f2-8106-f4ada30d9ef7.png)
+  * R-D curve (HEVC class B dataset): ![image](https://user-images.githubusercontent.com/108980934/187449448-aacf46ea-801f-48f7-8ac9-ce137ecc16ca.png)
   
 ## Project Installation
 1. Prepare PyTorch 1.4.0 environment and correspond torchvision
