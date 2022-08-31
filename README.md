@@ -1,7 +1,7 @@
 # CANF-VC: Conditional Augmented Normalizing Flows for Video Compression
 
 ## Update (08.30.22): CANF-VC with Error Propagation Aware Training Strategy
-* We report a **better** CANF-VC performer, which applies a popular **Error Propagation Aware (EPA) training strategy** from [Gou *et al.*, ECCV'20](https://www.ecva.net/papers/eccv_2020/papers_ECCV/papers/123470443.pdf). The network architecture is THE SAME as original CANF-VC, only with one more training step that enable all gradients when updating within a GOP.
+* We report a **better** CANF-VC performer, which applies a popular **Error Propagation Aware (EPA) training strategy** from [Gou *et al.*, ECCV'20](https://www.ecva.net/papers/eccv_2020/papers_ECCV/papers/123470443.pdf). The network architecture is THE SAME as original CANF-VC, only with one more training step that enabling all gradients when updating within a GOP.
 * Usage: Exactly the same as [CANF-VC](https://github.com/NYCU-MAPL/CANF-VC/blob/main/README.md#full-commands)
 * Download from https://drive.google.com/drive/folders/14WUDwRgNhx2S36KfyvlG3MW10W2VMwqv?usp=sharing
 * Performance
