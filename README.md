@@ -1,16 +1,17 @@
 # CANF-VC: Conditional Augmented Normalizing Flows for Video Compression
 
-## \*\*\*Update (08.30.22)\*\*\*: CANF-VC with Error Propagation Aware Training Strategy
-* We report a better CANF-VC performer, which applies a popular Error Propagation Aware (EPA) training strategy from [Gou *et al.*, ECCV'20](https://www.ecva.net/papers/eccv_2020/papers_ECCV/papers/123470443.pdf). The network architecture is THE SAME as original CANF-VC, only with one more training step that enable all gradients when updating within a GOP.
+## Update (08.30.22): CANF-VC with Error Propagation Aware Training Strategy
+* We report a **better** CANF-VC performer, which applies a popular **Error Propagation Aware (EPA) training strategy** from [Gou *et al.*, ECCV'20](https://www.ecva.net/papers/eccv_2020/papers_ECCV/papers/123470443.pdf). The network architecture is THE SAME as original CANF-VC, only with one more training step that enable all gradients when updating within a GOP.
 * Usage: Exactly the same as [CANF-VC](https://github.com/NYCU-MAPL/CANF-VC/blob/main/README.md#full-commands)
 * Download from https://drive.google.com/drive/folders/14WUDwRgNhx2S36KfyvlG3MW10W2VMwqv?usp=sharing
 * Performance
-  * BD-rate (GOP=32 ; anchor: x265 veryslow)
-    * ![image](https://user-images.githubusercontent.com/108980934/187421591-6b4acce8-1cf8-4a64-a590-c2ea844b2a2f.png)
-  * R-D curve (UVG dataset): ![image](https://user-images.githubusercontent.com/108980934/187449482-a9fad0fe-2506-47f2-8106-f4ada30d9ef7.png)
-  * R-D curve (HEVC class B dataset): ![image](https://user-images.githubusercontent.com/108980934/187449448-aacf46ea-801f-48f7-8ac9-ce137ecc16ca.png)
-  * R-D curve (MCL-JCV dataset): ![image](https://user-images.githubusercontent.com/108980934/187574039-7f9b9c7c-2a45-4039-b0d2-10525c5c908e.png)
-
+  * BD-rate (GOP=32 ; anchor: x265 veryslow). The best performer is marked in red and the second best in blue.
+    * ![image](https://user-images.githubusercontent.com/108980934/187574798-1f7a8ab6-5c15-49d5-9ea4-bae50afd18b0.png)
+  * R-D curves: 
+  * 
+    <img src="https://user-images.githubusercontent.com/108980934/187449482-a9fad0fe-2506-47f2-8106-f4ada30d9ef7.png" width="400"> 
+    <img src="https://user-images.githubusercontent.com/108980934/187449448-aacf46ea-801f-48f7-8ac9-ce137ecc16ca.png" width="400"> 
+    <img src="https://user-images.githubusercontent.com/108980934/187574039-7f9b9c7c-2a45-4039-b0d2-10525c5c908e.png" width="400">
   
 ## Project Installation
 1. Prepare PyTorch 1.4.0 environment and correspond torchvision
