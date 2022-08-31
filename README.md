@@ -9,6 +9,8 @@
     * ![image](https://user-images.githubusercontent.com/108980934/187421591-6b4acce8-1cf8-4a64-a590-c2ea844b2a2f.png)
   * R-D curve (UVG dataset): ![image](https://user-images.githubusercontent.com/108980934/187449482-a9fad0fe-2506-47f2-8106-f4ada30d9ef7.png)
   * R-D curve (HEVC class B dataset): ![image](https://user-images.githubusercontent.com/108980934/187449448-aacf46ea-801f-48f7-8ac9-ce137ecc16ca.png)
+  * R-D curve (MCL-JCV dataset): ![image](https://user-images.githubusercontent.com/108980934/187574039-7f9b9c7c-2a45-4039-b0d2-10525c5c908e.png)
+
   
 ## Project Installation
 1. Prepare PyTorch 1.4.0 environment and correspond torchvision
