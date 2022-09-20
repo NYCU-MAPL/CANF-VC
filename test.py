@@ -203,7 +203,6 @@ class Pframe(CompressModel):
                     file_name = os.path.join(file_pth, f'{int(frame_id_start+frame_idx)}.bin')
                     rec_frame, streams, shapes = self.compress(align.align(ref_frame), align.align(coding_frame), frame_idx)
                     rec_frame = rec_frame.clamp(0, 1)
-                    self.frame_buffer.append(rec_frame)
                     
                     with BitStreamIO(file_name, 'w') as fp:
                         fp.write(streams, [coding_frame.size()]+shapes)
@@ -228,7 +227,6 @@ class Pframe(CompressModel):
                     rec_frame, likelihoods = self(align.align(ref_frame), align.align(coding_frame), frame_idx)
 
                     rec_frame = rec_frame.clamp(0, 1)
-                    self.frame_buffer.append(rec_frame)
 
                     # Back to original resolution
                     rec_frame = align.resume(rec_frame)
@@ -424,7 +422,6 @@ class Pframe(CompressModel):
                 
                 rec_frame = self.decompress(align.align(ref_frame), stream_list, shape_list[1:], frame_idx).to(DEVICE)
                 rec_frame = rec_frame.clamp(0, 1)
-                self.frame_buffer.append(rec_frame)
                 rec_frame = align.resume(rec_frame, shape=shape_list[0])
 
                 height, width = shape_list[0][2:]
@@ -517,6 +514,12 @@ class Pframe(CompressModel):
 
         strings, shapes = mv_strings + res_strings, mv_shape + res_shape
 
+        # Update frame buffer
+        self.frame_buffer.append(reconstructed)
+        if len(self.frame_buffer) == 4:
+            self.frame_buffer.pop(0)
+            assert len(self.frame_buffer) == 3, str(len(self.frame_buffer))
+
         return reconstructed, strings, shapes
 
     def decompress(self, ref_frame, strings, shapes, p_order):
@@ -553,6 +556,12 @@ class Pframe(CompressModel):
         res_strings, res_shape = strings[2:], shapes[2:]
         reconstructed = self.Residual.decompress(res_strings, res_shape,
                                                  x2_back=mc_frame, xc=mc_frame, temporal_cond=mc_frame)
+
+        # Update frame buffer
+        self.frame_buffer.append(reconstructed)
+        if len(self.frame_buffer) == 4:
+            self.frame_buffer.pop(0)
+            assert len(self.frame_buffer) == 3, str(len(self.frame_buffer))
 
         return reconstructed
 
