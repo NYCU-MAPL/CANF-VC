@@ -293,6 +293,8 @@ class Pframe(CompressModel):
 
                 log_list.append({similarity_metrics: similarity, 'Rate': rate})
 
+                self.frame_buffer.append(align.align(rec_frame))
+
             # Make reconstruction as next reference frame
             ref_frame = rec_frame
 
@@ -461,6 +463,8 @@ class Pframe(CompressModel):
                 metrics['Rate'].append(rate)
 
                 log_list.append({'Rate': rate})
+
+                self.frame_buffer.append(align.align(rec_frame))
             
             # Store reconstructed frame
             save_image(rec_frame[0], os.path.join(save_dir, f'frame_{int(frame_id_start + frame_idx)}.png'))
