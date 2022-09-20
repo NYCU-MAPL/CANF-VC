@@ -22,7 +22,7 @@ class VideoTestSequence(torchData):
 
         self.root = root
         self.lmda = lmda
-        self.qp = {256: 37, 512: 32, 1024: 27, 2048: 22, 4096: 22}[lmda]
+        self.qp = {256: 37, 512: 32, 1024: 27, 2048: 22, 1440: 22}[lmda]
 
         assert os.path.exists(os.path.join(self.root, dataset, sequence)), \
             f'FileNotFoundError: sequence is not found (path: {os.path.join(self.root, dataset, sequence)})'

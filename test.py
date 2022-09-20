@@ -124,7 +124,7 @@ class Pframe(CompressModel):
 
     def forward(self, ref_frame, coding_frame, p_order=1):
         if p_order == 1:
-            self.frame_buffer = [align.align(ref_frame)]
+            self.frame_buffer = [ref_frame]
         
         mc_frame, likelihood_m = self.motion_forward(ref_frame, coding_frame, p_order)
 
@@ -566,7 +566,7 @@ class Pframe(CompressModel):
         return reconstructed
 
     def setup(self):
-        qp = {256: 37, 512: 32, 1024: 27, 2048: 22, 4096: 22}[self.args.lmda]
+        qp = {256: 37, 512: 32, 1024: 27, 2048: 22, 1440: 22}[self.args.lmda]
         
         if not (self.args.seq is None): # Test a single sequence
             if self.args.action == "test" or self.args.action == "compress":
