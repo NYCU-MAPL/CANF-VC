@@ -510,6 +510,12 @@ class Pframe(CompressModel):
 
         reconstructed, res_strings, res_shape = self.Residual.compress(coding_frame, x2_back=mc_frame, xc=mc_frame, temporal_cond=mc_frame, return_hat=True)
 
+        # Update frame buffer
+        self.frame_buffer.append(reconstructed)
+        if len(self.frame_buffer) == 4:
+            self.frame_buffer.pop(0)
+            assert len(self.frame_buffer) == 3, str(len(self.frame_buffer))
+
         strings, shapes = mv_strings + res_strings, mv_shape + res_shape
 
         return reconstructed, strings, shapes
@@ -544,6 +550,12 @@ class Pframe(CompressModel):
         mc_frame = self.MCNet(ref_frame, warped_frame)
 
         self.MWNet.append_flow(flow_hat)
+        
+        # Update frame buffer
+        self.frame_buffer.append(reconstructed)
+        if len(self.frame_buffer) == 4:
+            self.frame_buffer.pop(0)
+            assert len(self.frame_buffer) == 3, str(len(self.frame_buffer))
 
         res_strings, res_shape = strings[2:], shapes[2:]
         reconstructed = self.Residual.decompress(res_strings, res_shape,
