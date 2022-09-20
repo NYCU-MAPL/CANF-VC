@@ -203,6 +203,7 @@ class Pframe(CompressModel):
                     file_name = os.path.join(file_pth, f'{int(frame_id_start+frame_idx)}.bin')
                     rec_frame, streams, shapes = self.compress(align.align(ref_frame), align.align(coding_frame), frame_idx)
                     rec_frame = rec_frame.clamp(0, 1)
+                    self.frame_buffer.append(rec_frame)
                     
                     with BitStreamIO(file_name, 'w') as fp:
                         fp.write(streams, [coding_frame.size()]+shapes)
@@ -514,12 +515,6 @@ class Pframe(CompressModel):
 
         reconstructed, res_strings, res_shape = self.Residual.compress(coding_frame, x2_back=mc_frame, xc=mc_frame, temporal_cond=mc_frame, return_hat=True)
 
-        # Update frame buffer
-        self.frame_buffer.append(reconstructed)
-        if len(self.frame_buffer) == 4:
-            self.frame_buffer.pop(0)
-            assert len(self.frame_buffer) == 3, str(len(self.frame_buffer))
-
         strings, shapes = mv_strings + res_strings, mv_shape + res_shape
 
         return reconstructed, strings, shapes
@@ -558,12 +553,6 @@ class Pframe(CompressModel):
         res_strings, res_shape = strings[2:], shapes[2:]
         reconstructed = self.Residual.decompress(res_strings, res_shape,
                                                  x2_back=mc_frame, xc=mc_frame, temporal_cond=mc_frame)
-
-        # Update frame buffer
-        self.frame_buffer.append(reconstructed)
-        if len(self.frame_buffer) == 4:
-            self.frame_buffer.pop(0)
-            assert len(self.frame_buffer) == 3, str(len(self.frame_buffer))
 
         return reconstructed
 
