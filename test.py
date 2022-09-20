@@ -227,7 +227,6 @@ class Pframe(CompressModel):
                     rec_frame, likelihoods = self(align.align(ref_frame), align.align(coding_frame), frame_idx)
 
                     rec_frame = rec_frame.clamp(0, 1)
-                    self.frame_buffer.append(rec_frame)
 
                     # Back to original resolution
                     rec_frame = align.resume(rec_frame)
@@ -423,7 +422,6 @@ class Pframe(CompressModel):
                 
                 rec_frame = self.decompress(align.align(ref_frame), stream_list, shape_list[1:], frame_idx).to(DEVICE)
                 rec_frame = rec_frame.clamp(0, 1)
-                self.frame_buffer.append(rec_frame)
                 rec_frame = align.resume(rec_frame, shape=shape_list[0])
 
                 height, width = shape_list[0][2:]
@@ -514,13 +512,13 @@ class Pframe(CompressModel):
 
         reconstructed, res_strings, res_shape = self.Residual.compress(coding_frame, x2_back=mc_frame, xc=mc_frame, temporal_cond=mc_frame, return_hat=True)
 
+        strings, shapes = mv_strings + res_strings, mv_shape + res_shape
+
         # Update frame buffer
         self.frame_buffer.append(reconstructed)
         if len(self.frame_buffer) == 4:
             self.frame_buffer.pop(0)
             assert len(self.frame_buffer) == 3, str(len(self.frame_buffer))
-
-        strings, shapes = mv_strings + res_strings, mv_shape + res_shape
 
         return reconstructed, strings, shapes
 
@@ -555,15 +553,16 @@ class Pframe(CompressModel):
 
         self.MWNet.append_flow(flow_hat)
         
+        res_strings, res_shape = strings[2:], shapes[2:]
+        reconstructed = self.Residual.decompress(res_strings, res_shape,
+                                                 x2_back=mc_frame, xc=mc_frame, temporal_cond=mc_frame)
+
         # Update frame buffer
         self.frame_buffer.append(reconstructed)
         if len(self.frame_buffer) == 4:
             self.frame_buffer.pop(0)
             assert len(self.frame_buffer) == 3, str(len(self.frame_buffer))
 
-        res_strings, res_shape = strings[2:], shapes[2:]
-        reconstructed = self.Residual.decompress(res_strings, res_shape,
-                                                 x2_back=mc_frame, xc=mc_frame, temporal_cond=mc_frame)
         return reconstructed
 
     def setup(self):
