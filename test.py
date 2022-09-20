@@ -555,15 +555,16 @@ class Pframe(CompressModel):
 
         self.MWNet.append_flow(flow_hat)
         
+        res_strings, res_shape = strings[2:], shapes[2:]
+        reconstructed = self.Residual.decompress(res_strings, res_shape,
+                                                 x2_back=mc_frame, xc=mc_frame, temporal_cond=mc_frame)
+
         # Update frame buffer
         self.frame_buffer.append(reconstructed)
         if len(self.frame_buffer) == 4:
             self.frame_buffer.pop(0)
             assert len(self.frame_buffer) == 3, str(len(self.frame_buffer))
 
-        res_strings, res_shape = strings[2:], shapes[2:]
-        reconstructed = self.Residual.decompress(res_strings, res_shape,
-                                                 x2_back=mc_frame, xc=mc_frame, temporal_cond=mc_frame)
         return reconstructed
 
     def setup(self):
