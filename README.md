@@ -6,7 +6,8 @@
 * Download from https://drive.google.com/drive/folders/14WUDwRgNhx2S36KfyvlG3MW10W2VMwqv?usp=sharing
 * Performance
   * BD-rate (GOP=32 ; anchor: x265 veryslow). The best performer is marked in red and the second best in blue.
-    * ![image](https://user-images.githubusercontent.com/108980934/187574798-1f7a8ab6-5c15-49d5-9ea4-bae50afd18b0.png)
+    * ![image](https://user-images.githubusercontent.com/108980934/193492740-4c53891d-b755-4d7c-a698-972edf8a975b.png)
+
   * R-D curves: 
   * 
     <img src="https://user-images.githubusercontent.com/108980934/187449482-a9fad0fe-2506-47f2-8106-f4ada30d9ef7.png" width="400"> 
