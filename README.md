@@ -3,7 +3,7 @@
 ## Update (08.30.22): CANF-VC with Error Propagation Aware Training Strategy
 * CANF-VC-EPA is an enhanced version of CANF-VC. With exactly the same network architecture as CANF-VC, CANF-VC-EPA additionally introduces the Error Propagation Aware (EPA) training strategy from Guo et al., ECCV'20. 
 * Usage: Exactly the same as [CANF-VC](https://github.com/NYCU-MAPL/CANF-VC/blob/main/README.md#full-commands)
-* Download from https://drive.google.com/drive/folders/14WUDwRgNhx2S36KfyvlG3MW10W2VMwqv?usp=sharing
+* Download from https://drive.google.com/drive/folders/1QSq8Z3MMXXnyNhgYmhIyFk9txuFEub1x?usp=sharing
 * Performance
   * BD-rate (GOP=32 ; anchor: x265 veryslow). The best performer is marked in red and the second best in blue.
     * ![image](https://user-images.githubusercontent.com/108980934/193492740-4c53891d-b755-4d7c-a698-972edf8a975b.png)
@@ -23,10 +23,10 @@
 5. Start evaluation: `action=test/compress/decompress`
 
 ## Model Weight
-* CANF-VC: https://drive.google.com/drive/folders/1fj8sb_CMktyJ_yU0Yf2lbZjzxVYAGvUw?usp=sharing
-* CANF-VC*: https://drive.google.com/drive/folders/19gZlrhk1ONNbLpqfD9DTSCBWvh-uSamJ?usp=sharing
-* CANF-VC Lite: https://drive.google.com/drive/folders/1e5WSsGhuqKh8b8VS9QGczx0XeQDHu-cs?usp=sharing
-* Submodules: https://drive.google.com/drive/folders/1mjyGyyxgAxdFpzvesYYnBwRHF-0VKdnm?usp=sharing
+* CANF-VC: https://drive.google.com/drive/folders/1-AoStpdYvehatuQfIxAAAiml2vb3pM9P?usp=sharing
+* CANF-VC*: https://drive.google.com/drive/folders/1gtaSNjQppzf-BKV2vcHn1g7jwVofO35f?usp=sharing
+* CANF-VC Lite: https://drive.google.com/drive/folders/1lw5GtM2VQpGOHvZjQWYGTPPOByTLlp7b?usp=sharing
+* Submodules: https://drive.google.com/drive/folders/1laZqi2_X5vk7TAT1DaUZhGN96PnUikW0?usp=sharing
   > Should be put under this project directory
 
 ## Dataset
