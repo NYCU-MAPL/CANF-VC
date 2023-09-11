@@ -5,6 +5,7 @@ from context_model import ContextModel
 from entropy_models import __CONDITIONS__, EntropyBottleneck
 from generalizedivisivenorm import GeneralizedDivisiveNorm
 from modules import AugmentedNormalizedFlow, Conv2d, ConvTranspose2d
+from DCVC_DC_context_model import QuadtreePartitionBasedContextModel
 
 
 class CompressesModel(nn.Module):
@@ -389,7 +390,7 @@ class AugmentedNormalizedFlowHyperPriorCoder(HyperPriorCoder):
             hyperpriors, return_sym=True)
 
         condition = self.hyper_synthesis(h_hat)
-
+        
         ret = self.conditional_bottleneck.compress(
             code, condition=condition, return_sym=return_hat)
 
@@ -670,7 +671,7 @@ class CANFHyperPriorCoderWithTemporalPrior(CANFHyperPriorCoder):
                 nn.LeakyReLU(inplace=True),
                 nn.Conv2d(640, kwargs['num_features'], 1)
             )
-    
+            
     def entropy_model(self, input, code, temporal_cond):
         # Enrtopy coding
         hyper_code = self.hyper_analysis(
@@ -790,9 +791,43 @@ class CANFHyperPriorCoderWithTemporalPrior(CANFHyperPriorCoder):
         return input, (y_likelihood, z_likelihood), x_2, BDQ
 
 
+class CANFHyperPriorCoderWithQuadtreeContext(CANFHyperPriorCoderWithTemporalPrior):
+    def __init__(self, **kwargs):
+        super(CANFHyperPriorCoderWithQuadtreeContext, self).__init__(**kwargs)
+
+        self._conditional_bottleneck = self.conditional_bottleneck 
+        self.conditional_bottleneck = QuadtreePartitionBasedContextModel(kwargs['num_features'], self._conditional_bottleneck)
+
+    def compress(self, input, xc=None, x2_back=None, temporal_cond=None, return_hat=False):
+        ret = super().compress(input, xc, x2_back, temporal_cond, return_hat)
+
+        if return_hat:
+            x_hat, stream, shape = ret
+        else:
+            stream, shape = ret
+
+        # We have 4 strings in main stream (i.e. stream[0]), so we need to flatten it along with side stream.
+        stream = [*(stream[0]), stream[1]]
+        assert len(stream) == 5
+        feat_size, hp_size = shape
+        feat_size = (feat_size[0], feat_size[1]//4, feat_size[2], feat_size[3])
+
+        if return_hat:
+            return x_hat, stream, [feat_size, hp_size]
+        else:
+            return stream, [feat_size, hp_size]
+
+    def decompress(self, strings, shapes, xc=None, x2_back=None, temporal_cond=None):
+        stream, side_stream = strings[:-1], strings[-1]
+        strings = [stream, side_stream]
+
+        return super().decompress(strings, shapes, xc, x2_back, temporal_cond)
+
+
 __CODER_TYPES__ = {
                    "GoogleHyperPriorCoder": GoogleHyperPriorCoder,
                    "ANFHyperPriorCoder": AugmentedNormalizedFlowHyperPriorCoder,
                    "CANFHyperPriorCoder": CANFHyperPriorCoder,
                    "CANFHyperPriorCoderWithTemporalPrior": CANFHyperPriorCoderWithTemporalPrior,
+                   "CANFHyperPriorCoderWithQuadtreeContext": CANFHyperPriorCoderWithQuadtreeContext,
                   }

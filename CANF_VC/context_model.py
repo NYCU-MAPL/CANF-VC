@@ -59,13 +59,15 @@ class MaskedConv2d(nn.Conv2d):
         if padding:
             input = self.pad(input)
 
-        if not self.training:
-            if self._w_cache is None:
-                self._w_cache = self.weight*self._mask
-            return self.conv2d_forward(input, self._w_cache)
-        else:
-            self._w_cache = None
-            return self.conv2d_forward(input, self.weight*self._mask)
+        #if not self.training:
+        #    if self._w_cache is None:
+        #        self._w_cache = self.weight*self._mask
+        #    return self.conv2d_forward(input, self._w_cache)
+        #else:
+        #    self._w_cache = None
+        #    return self.conv2d_forward(input, self.weight*self._mask)
+        self._w_cache = None
+        return self.conv2d_forward(input, self.weight*self._mask)
 
 
 class ContextModel(nn.Module):

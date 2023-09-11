@@ -18,7 +18,9 @@ from CANF_VC.entropy_models import EntropyBottleneck, estimate_bpp
 from CANF_VC.networks import __CODER_TYPES__, AugmentedNormalizedFlowHyperPriorCoder
 from CANF_VC.flownets import PWCNet, SPyNet
 from CANF_VC.SDCNet import MotionExtrapolationNet
+from CANF_VC.GridNet import GridNet, ResidualBlock, DownsampleBlock
 from CANF_VC.models import Refinement
+from CANF_VC.conditional_module import conditional_warping, set_condition, set_state
 from CANF_VC.util.psnr import mse2psnr
 from CANF_VC.util.sampler import Resampler
 from CANF_VC.util.ssim import MS_SSIM
@@ -190,7 +192,7 @@ class Pframe(CompressModel):
         self.frame_buffer = list()
 
         if TO_COMPRESS:
-            file_pth = os.path.join(self.args.bitstream_dir, dataset_name, seq_name)
+            file_pth = os.path.join(self.args.bitstream_dir, dataset_name, seq_name, str(self.args.lmda))
             os.makedirs(file_pth, exist_ok=True)
 
         for frame_idx in range(gop_size):
@@ -203,7 +205,6 @@ class Pframe(CompressModel):
                     file_name = os.path.join(file_pth, f'{int(frame_id_start+frame_idx)}.bin')
                     rec_frame, streams, shapes = self.compress(align.align(ref_frame), align.align(coding_frame), frame_idx)
                     rec_frame = rec_frame.clamp(0, 1)
-                    
                     with BitStreamIO(file_name, 'w') as fp:
                         fp.write(streams, [coding_frame.size()]+shapes)
 
@@ -257,10 +258,16 @@ class Pframe(CompressModel):
             else:
                 if TO_COMPRESS and self.args.Iframe == 'ANFIC':
                     file_name = os.path.join(file_pth, f'{int(frame_id_start+frame_idx)}.bin')
-                    rec_frame, streams, shapes = self.if_model.compress(align.align(coding_frame), return_hat=True)
                     
-                    with BitStreamIO(file_name, 'w') as fp:
-                        fp.write(streams, [coding_frame.size()]+shapes)
+                    if os.path.exists(file_name):
+                        self.if_model.conditional_bottleneck.to(DEVICE)
+                        rec_frame, _, _ = self.if_model(align.align(coding_frame))
+                        self.if_model.conditional_bottleneck.to("cpu")
+                    else:
+                        rec_frame, streams, shapes = self.if_model.compress(align.align(coding_frame), return_hat=True)
+                        
+                        with BitStreamIO(file_name, 'w') as fp:
+                            fp.write(streams, [coding_frame.size()]+shapes)
 
                     rec_frame = align.resume(rec_frame.to(DEVICE)).clamp(0, 1)
                     # Read the binary files directly for accurate bpp estimate.
@@ -407,7 +414,7 @@ class Pframe(CompressModel):
         self.MWNet.clear_buffer()
         self.frame_buffer = list()
         
-        save_dir = self.args.logs_dir + f'/reconstructed/{seq_name}/'
+        save_dir = self.args.logs_dir + f'/reconstructed/{seq_name}/{self.args.lmda}'
         os.makedirs(save_dir, exist_ok=True)
 
         for frame_idx in range(gop_size):
@@ -419,7 +426,6 @@ class Pframe(CompressModel):
 
                 with BitStreamIO(file_name, 'r') as fp:
                     stream_list, shape_list = fp.read_file()
-                
                 rec_frame = self.decompress(align.align(ref_frame), stream_list, shape_list[1:], frame_idx).to(DEVICE)
                 rec_frame = rec_frame.clamp(0, 1)
                 rec_frame = align.resume(rec_frame, shape=shape_list[0])
@@ -526,7 +532,7 @@ class Pframe(CompressModel):
         predict = p_order > 1 
 
         mv_strings, mv_shape = strings[:2], shapes[:2]
-
+        res_strings, res_shape = strings[2:], shapes[2:]
         if predict:
             assert len(self.frame_buffer) == 3 or len(self.frame_buffer) == 2
             
@@ -546,6 +552,8 @@ class Pframe(CompressModel):
         # No motion extrapolation is performed for first P frame
         else: 
             # Decode motion unconditionally
+            mv_strings, mv_shape = strings[:2], shapes[:2]
+            res_strings, res_shape = strings[2:], shapes[2:]
             flow_hat = self.Motion.decompress(mv_strings, mv_shape)
 
         warped_frame = self.Resampler(ref_frame, flow_hat)
@@ -553,7 +561,6 @@ class Pframe(CompressModel):
 
         self.MWNet.append_flow(flow_hat)
         
-        res_strings, res_shape = strings[2:], shapes[2:]
         reconstructed = self.Residual.decompress(res_strings, res_shape,
                                                  x2_back=mc_frame, xc=mc_frame, temporal_cond=mc_frame)
 
@@ -595,6 +602,254 @@ class Pframe(CompressModel):
             self.Residual.conditional_bottleneck.to("cpu")
 
 
+class PframeV2(Pframe):
+    def __init__(self, args, mo_coder, cond_mo_coder, res_coder):
+        super(PframeV2, self).__init__(args, mo_coder, cond_mo_coder, res_coder)
+        self.__delattr__('MCNet')
+
+        self.MENet = PWCNet(trainable=False).to(DEVICE)
+
+        self.feature_extractors = nn.ModuleList([ResidualBlock(3, 32), DownsampleBlock(32, 64), DownsampleBlock(64, 96)]).to(DEVICE)
+
+        self.frame_synthesis = GridNet([6, 64, 128, 192], [32, 64, 96], 6, 3)
+
+        self.accumulated_flow_extractor = nn.Sequential(
+                                            ResidualBlock(2, 32), 
+                                            DownsampleBlock(32, 64), 
+                                            DownsampleBlock(64, 96),
+                                            nn.AdaptiveAvgPool2d(1)
+                                          ).to(DEVICE)
+        
+        conditional_warping(self.feature_extractors, conditions=96, num_states=2)
+        conditional_warping(self.frame_synthesis, conditions=96)
+        conditional_warping(self.Residual.analysis0, conditions=96)
+        conditional_warping(self.Residual.synthesis0, conditions=96)
+        conditional_warping(self.Residual.analysis1, conditions=96)
+        conditional_warping(self.Residual.synthesis1, conditions=96)
+        conditional_warping(self.Residual.hyper_analysis, conditions=96)
+        conditional_warping(self.Residual.hyper_synthesis, conditions=96)
+        conditional_warping(self.Residual.PA, conditions=96)
+        conditional_warping(self.Residual.pred_prior, conditions=96)
+
+        self.frame_synthesis = self.frame_synthesis.to(DEVICE)
+        self.Residual = self.Residual.to(DEVICE)
+
+        self.accumulated_flow = None
+
+    def load_args(self, args):
+        self.args = args
+    
+    def set_condition(self, cond):
+        cond = cond.to(DEVICE)
+        set_condition(self.feature_extractors, cond)
+        set_condition(self.frame_synthesis, cond)
+        set_condition(self.Residual.analysis0, cond)
+        set_condition(self.Residual.synthesis0, cond)
+        set_condition(self.Residual.analysis1, cond)
+        set_condition(self.Residual.synthesis1, cond)
+        set_condition(self.Residual.hyper_analysis, cond)
+        set_condition(self.Residual.hyper_synthesis, cond)
+        set_condition(self.Residual.PA, cond)
+        set_condition(self.Residual.pred_prior, cond)
+
+    def fuse_reference(self, ref_frame, flow_hat):
+        acc_flow_scaler = self.accumulated_flow.size(2) / 256.
+        scaled_acc_flow = nn.functional.interpolate(self.accumulated_flow, scale_factor=1/acc_flow_scaler, mode='bilinear', align_corners=True) * (1/acc_flow_scaler)
+        adaptive_cond = self.accumulated_flow_extractor(scaled_acc_flow).flatten(1)
+
+        self.set_condition(adaptive_cond)
+
+        ref_feats_warped = [self.Resampler(ref_frame, flow_hat)]
+        ref_feats = [ref_frame]
+
+        ref_feat_for_warped = ref_frame
+        ref_feat = ref_frame
+
+        for i, feature_extractor in enumerate(self.feature_extractors):
+            set_condition(feature_extractor, adaptive_cond)
+            set_state(feature_extractor, 1)
+            ref_feat_for_warped = feature_extractor(ref_feat_for_warped)
+            ref_feats_warped.append(self.Resampler(ref_feat_for_warped, nn.functional.interpolate(flow_hat, scale_factor=2**(-i), mode='bilinear', align_corners=True) * 2**(-i)))
+
+            set_condition(feature_extractor, adaptive_cond)
+            set_state(feature_extractor, 0)
+            ref_feat = feature_extractor(ref_feat)
+            ref_feats.append(ref_feat)
+
+        feats = [torch.cat([ref_feat_warped, ref_feat], axis=1) for ref_feat_warped, ref_feat in zip(ref_feats_warped, ref_feats)]
+        fused_frame, _ = self.frame_synthesis(feats)
+
+        return fused_frame
+
+
+    def load_args(self, args):
+        self.args = args
+
+    def motion_forward(self, ref_frame, coding_frame, p_order=1):
+        # To generate extrapolated motion for conditional motion coding or not
+        # "False" for first P frame (p_order == 1)
+        predict = p_order > 1 
+        if predict:
+            assert len(self.frame_buffer) == 3 or len(self.frame_buffer) == 2
+            
+            # Update frame buffer ; motion (flow) buffer will be updated in self.MWNet
+            if len(self.frame_buffer) == 3:
+                frame_buffer = [self.frame_buffer[0], self.frame_buffer[1], self.frame_buffer[2]]
+
+            else:
+                frame_buffer = [self.frame_buffer[0], self.frame_buffer[0], self.frame_buffer[1]]
+
+            pred_frame, pred_flow = self.MWNet(frame_buffer, self.flow_buffer if len(self.flow_buffer) == 2 else None, True)
+            
+            flow = self.MENet(ref_frame, coding_frame)
+            
+            # Encode motion condioning on extrapolated motion
+            flow_hat, likelihood_m, _, _ = self.CondMotion(flow, xc=pred_flow, x2_back=pred_flow, temporal_cond=pred_frame)
+
+            self.accumulated_flow = self.Resampler(self.accumulated_flow, flow_hat) + flow_hat
+
+        # No motion extrapolation is performed for first P frame
+        else: 
+            flow = self.MENet(ref_frame, coding_frame)
+            # Encode motion unconditionally
+            flow_hat, likelihood_m = self.Motion(flow)
+
+            self.accumulated_flow = flow_hat
+
+        mc_frame = self.fuse_reference(ref_frame, flow_hat)
+
+        self.MWNet.append_flow(flow_hat)
+
+        return mc_frame, likelihood_m
+
+    def forward(self, ref_frame, coding_frame, p_order=1):
+        if p_order == 1:
+            self.frame_buffer = [ref_frame]
+        
+        mc_frame, likelihood_m = self.motion_forward(ref_frame, coding_frame, p_order)
+
+        reconstructed, likelihood_r, _, _ = self.Residual(coding_frame, xc=mc_frame, x2_back=mc_frame, temporal_cond=mc_frame)
+
+        likelihoods = likelihood_m + likelihood_r
+        
+        reconstructed = reconstructed.clamp(0, 1)
+
+        # Update frame buffer
+        self.frame_buffer.append(reconstructed)
+        if len(self.frame_buffer) == 4:
+            self.frame_buffer.pop(0)
+            assert len(self.frame_buffer) == 3, str(len(self.frame_buffer))
+    
+        return reconstructed, likelihoods
+
+    def compress(self, ref_frame, coding_frame, p_order):
+        # To generate extrapolated motion for conditional motion coding or not
+        # "False" for first P frame (p_order == 1)
+        predict = p_order > 1 
+        if predict:
+            assert len(self.frame_buffer) == 3 or len(self.frame_buffer) == 2
+            
+            # Update frame buffer ; motion (flow) buffer will be updated in self.MWNet
+            if len(self.frame_buffer) == 3:
+                frame_buffer = [self.frame_buffer[0], self.frame_buffer[1], self.frame_buffer[2]]
+
+            else:
+                frame_buffer = [self.frame_buffer[0], self.frame_buffer[0], self.frame_buffer[1]]
+
+            pred_frame, pred_flow = self.MWNet(frame_buffer, self.flow_buffer if len(self.flow_buffer) == 2 else None, True)
+            
+            flow = self.MENet(ref_frame, coding_frame)
+            
+            # Encode motion condioning on extrapolated motion
+            flow_hat, mv_strings, mv_shape = self.CondMotion.compress(flow, x2_back=pred_flow,xc=pred_flow, temporal_cond=pred_frame, 
+                                                                      return_hat=True)
+
+            self.accumulated_flow = self.Resampler(self.accumulated_flow, flow_hat) + flow_hat
+
+        # No motion extrapolation is performed for first P frame
+        else: 
+            flow = self.MENet(ref_frame, coding_frame)
+            # Encode motion unconditionally
+            flow_hat, mv_strings, mv_shape = self.Motion.compress(flow, return_hat=True)
+
+            self.accumulated_flow = flow_hat
+
+        mc_frame = self.fuse_reference(ref_frame, flow_hat)
+
+        self.MWNet.append_flow(flow_hat)
+
+        reconstructed, res_strings, res_shape = self.Residual.compress(coding_frame, x2_back=mc_frame, xc=mc_frame, temporal_cond=mc_frame, return_hat=True)
+
+        strings, shapes = mv_strings + res_strings, mv_shape + res_shape
+
+        # Update frame buffer
+        self.frame_buffer.append(reconstructed)
+        if len(self.frame_buffer) == 4:
+            self.frame_buffer.pop(0)
+            assert len(self.frame_buffer) == 3, str(len(self.frame_buffer))
+
+        return reconstructed, strings, shapes
+
+    def decompress(self, ref_frame, strings, shapes, p_order):
+        predict = p_order > 1 
+
+        if predict:
+            mv_strings, mv_shape = strings[:5], shapes[:2]
+            res_strings, res_shape = strings[5:], shapes[2:]
+
+            assert len(self.frame_buffer) == 3 or len(self.frame_buffer) == 2
+            
+            # Update frame buffer ; motion (flow) buffer will be updated in self.MWNet
+            if len(self.frame_buffer) == 3:
+                frame_buffer = [self.frame_buffer[0], self.frame_buffer[1], self.frame_buffer[2]]
+
+            else:
+                frame_buffer = [self.frame_buffer[0], self.frame_buffer[0], self.frame_buffer[1]]
+
+            pred_frame, pred_flow = self.MWNet(frame_buffer, self.flow_buffer if len(self.flow_buffer) == 2 else None, True)
+            
+            # Decode motion condioning on extrapolated motion
+            flow_hat = self.CondMotion.decompress(mv_strings, mv_shape, 
+                                                  x2_back=pred_flow,xc=pred_flow, temporal_cond=pred_frame)
+
+            self.accumulated_flow = self.Resampler(self.accumulated_flow, flow_hat) + flow_hat
+
+        # No motion extrapolation is performed for first P frame
+        else: 
+            mv_strings, mv_shape = strings[:2], shapes[:2]
+            res_strings, res_shape = strings[2:], shapes[2:]
+
+            # Decode motion unconditionally
+            flow_hat = self.Motion.decompress(mv_strings, mv_shape)
+
+            self.accumulated_flow = flow_hat
+
+        mc_frame = self.fuse_reference(ref_frame, flow_hat)
+
+        self.MWNet.append_flow(flow_hat)
+        
+        reconstructed = self.Residual.decompress(res_strings, res_shape,
+                                                 x2_back=mc_frame, xc=mc_frame, temporal_cond=mc_frame)
+
+        # Update frame buffer
+        self.frame_buffer.append(reconstructed)
+        if len(self.frame_buffer) == 4:
+            self.frame_buffer.pop(0)
+            assert len(self.frame_buffer) == 3, str(len(self.frame_buffer))
+
+        return reconstructed
+
+    def setup(self):
+        super().setup()
+
+        if self.args.action == "compress" or self.args.action == "decompress":
+            self.CondMotion.conditional_bottleneck.to(DEVICE)
+            self.Residual.conditional_bottleneck.to(DEVICE)
+
+            self.CondMotion.conditional_bottleneck.entropy_model.to("cpu")
+            self.Residual.conditional_bottleneck.entropy_model.to("cpu")
+
+
 if __name__ == '__main__':
     # sets seeds for numpy, torch, etc...
     # must do for DDP to work well
@@ -610,6 +865,7 @@ if __name__ == '__main__':
 
     # Model architecture specification
     parser.add_argument('--Iframe', type=str, choices=['BPG', 'ANFIC'], default='BPG')
+    parser.add_argument('--Pframe', type=str, choices=['CANFVC', 'CANFVC_PP'], default='CANFVC')
     parser.add_argument('--MENet', type=str, choices=['PWC', 'SPy'], default='PWC')
     parser.add_argument('--motion_coder_conf', type=str, default='./config/DVC_motion.yml')
     parser.add_argument('--cond_motion_coder_conf', type=str, default='./config/CANF_motion_predprior.yml')
@@ -660,8 +916,14 @@ if __name__ == '__main__':
     res_coder = res_coder_arch(**res_coder_cfg['model_params'])
 
     checkpoint = torch.load(os.path.join(args.model_dir, f"{args.lmda}.ckpt"), map_location=(lambda storage, loc: storage))
+    
+    if args.Pframe == 'CANFVC':
+        model = Pframe(args, mo_coder, cond_mo_coder, res_coder).cuda()
+    elif args.Pframe == 'CANFVC_PP':
+        model = PframeV2(args, mo_coder, cond_mo_coder, res_coder).cuda()
+    else:
+        raise ValueError
 
-    model = Pframe(args, mo_coder, cond_mo_coder, res_coder).cuda()
     model.load_state_dict(checkpoint['state_dict'], strict=True)
     
     model.setup()

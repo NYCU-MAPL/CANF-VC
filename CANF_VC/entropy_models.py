@@ -49,7 +49,7 @@ class EntropyModel(nn.Module):
             average codelength slightly compared to the estimated entropies.
     """
 
-    quant_modes = ["noise", "universal", "round", "UQ", "pass"]
+    quant_modes = ["noise", "universal", "round", "UQ", "pass", "estUN_outR"]
 
     def __init__(self, quant_mode="noise", tail_mass=2 ** -8, range_coder_precision=16):
         super(EntropyModel, self).__init__()
@@ -110,7 +110,7 @@ class EntropyModel(nn.Module):
 
         outputs = quantize(input, mode, mean)
 
-        if mode == "round" or mode == "UQ":
+        if mode == "round" or mode == "UQ" or mode == "estUN_outR":
             outputs = self.dequantize(outputs, mean)
         elif mode == "symbols":
             outputs = outputs.short()
@@ -214,10 +214,27 @@ class EntropyModel(nn.Module):
     def forward(self, input, condition=None):
         self._set_condition(condition)
 
-        output = self.quantize(
-            input, self.quant_mode if self.training else "round", self.mean)
+        if self.quant_mode == 'estUN_outR' and self.training:
+            output_UN = self.quantize(input, 'noise', self.mean)
+            likelihood = self._likelihood(output_UN)
+            
+            def _training_quant(x):
+                n = torch.round(x) - x
+                n = n.clone().detach()
+                return x + n
 
-        likelihood = self._likelihood(output)
+            if self.mean is not None:
+                input_res = input - self.mean
+
+                output = _training_quant(input_res) + self.mean
+            else:
+                output = _training_quant(input)
+        
+        else:
+            output = self.quantize(
+                input, self.quant_mode if self.training else "round", self.mean)
+
+            likelihood = self._likelihood(output)
 
         return output, likelihood
 

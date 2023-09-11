@@ -1,0 +1,21 @@
+---
+model_architecture: CANFHyperPriorCoderWithQuadtreeContext
+
+model_params:
+    num_filters: 128
+    num_features: 128
+    num_hyperpriors: 128
+    hyper_filters: 128
+    in_channels: 2
+    out_channels: 2
+    kernel_size: 3
+    num_layers: 2
+    init_code: gaussian
+    use_QE: True
+    use_affine: False
+    use_mean: True
+    use_context: False
+    condition: Gaussian
+    quant_mode: estUN_outR
+    in_channels_tp: 3
+    num_filters_tp: 128

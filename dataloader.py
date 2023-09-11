@@ -27,7 +27,7 @@ class VideoTestSequence(torchData):
         assert os.path.exists(os.path.join(self.root, dataset, sequence)), \
             f'FileNotFoundError: sequence is not found (path: {os.path.join(self.root, dataset, sequence)})'
         
-        if not (seq_len % seq_len):
+        if seq_len % seq_len:
             print(f'Warning: GOP={GOP} cannot divide seq_len={seq_len} ; Only the first {seq_len - seq_len % GOP} will be coded')
 
         self.seq_name = [sequence]
@@ -212,6 +212,7 @@ class BitstreamData(VideoTestData):
         super(BitstreamData, self).__init__(root, lmda, sequence, GOP)
         self.bin_root = bin_root
         self.load_Iframe = load_Iframe # If False, ignore I-frame. Design for BPG-compressed I-frame
+        self.lmda = lmda
 
     def __getitem__(self, idx):
         dataset_name, seq_name, frame_start, frame_end = self.gop_list[idx]
@@ -219,7 +220,7 @@ class BitstreamData(VideoTestData):
          
         for frame_idx in range(frame_start, frame_end):
 
-            filename = os.path.join(self.bin_root, dataset_name, seq_name, f'{frame_idx}.bin')
+            filename = os.path.join(self.bin_root, dataset_name, seq_name, str(self.lmda), f'{frame_idx}.bin')
 
             if frame_idx == frame_start and self.load_Iframe:
                 img_root = os.path.join(self.root, 'bpg', str(self.qp), 'decoded', seq_name)
@@ -250,6 +251,7 @@ class BitstreamSequence(VideoTestSequence):
         super(BitstreamSequence, self).__init__(root, lmda, dataset, sequence, seq_len, GOP)
         self.bin_root = bin_root
         self.load_Iframe = load_Iframe # If False, ignore I-frame. Design for BPG-compressed I-frame
+        self.lmda = lmda
 
     def __getitem__(self, idx):
         dataset_name, seq_name, frame_start, frame_end = self.gop_list[idx]
@@ -257,7 +259,7 @@ class BitstreamSequence(VideoTestSequence):
          
         for frame_idx in range(frame_start, frame_end):
 
-            filename = os.path.join(self.bin_root, dataset_name, seq_name, f'{frame_idx}.bin')
+            filename = os.path.join(self.bin_root, dataset_name, seq_name, str(self.lmda), f'{frame_idx}.bin')
 
             if frame_idx == frame_start and self.load_Iframe:
                 img_root = os.path.join(self.root, 'bpg', str(self.qp), 'decoded', seq_name)
