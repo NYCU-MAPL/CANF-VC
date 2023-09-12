@@ -1,7 +1,7 @@
 
 # CANF-VC: Conditional Augmented Normalizing Flows for Video Compression
 ## Update (09.11.23): CANF-VC++: Enhancing Conditional Augmented Normalizing Flows for Video Compression with Advanced Techniques
-* We present CANF-VC++, an improved video compression framework from CANF-VC. CANF-VC++ demonstrates substantial Bjøntegaard-Delta rate savings of 40.2%, 38.1%, and 35.5% on UVG, HEVC Class B, and MCL-JCV datasets, respectively over CANF-VC. Please check our [paper]() on arxiv for the details of our improvements. You can find the inference commands in [full commands](https://github.com/NYCU-MAPL/CANF-VC/blob/main/README.md#full-commands) section.
+* We present CANF-VC++, an improved video compression framework from CANF-VC. CANF-VC++ demonstrates substantial Bjøntegaard-Delta rate savings of 40.2%, 38.1%, and 35.5% on UVG, HEVC Class B, and MCL-JCV datasets, respectively over CANF-VC. Please check our [paper](https://arxiv.org/abs/2309.05382) on arxiv for the details of our improvements. You can find the inference commands in [full commands](https://github.com/NYCU-MAPL/CANF-VC/blob/main/README.md#full-commands) section.
 * Performance
   * BD-rate (Anchor: CANF-VC ; GOP=32 ; only compress first 96 frames in each testing sequence)
     * ![圖片](https://github.com/NYCU-MAPL/CANF-VC/assets/108980934/1b43ea52-beba-4628-9cde-795074d5c080)
